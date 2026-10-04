@@ -9,8 +9,8 @@ import { Online } from './net.js';
 import {
   settings, saveSettings, resetBinds, ACTIONS, keyLabel, loadKeyboardLayout, formatTime,
 } from './settings.js';
-import { ABILITIES, ENV_SPELLS, spellName, abilityOf, poolFor, sanitizeBuild, BUILD_SLOTS, AUTO, describe } from '../../shared/abilities.js';
-import { storyBestLine } from './story-ui.js';
+import { ABILITIES, ENV_SPELLS, spellName, abilityOf, poolFor, sanitizeBuild, BUILD_SLOTS, AUTO, describe, RARITIES } from '../../shared/abilities.js';
+import { storyBestLine, renderOffer } from './story-ui.js';
 import { HOSTILE } from './render-story.js';
 import { ENV_COLOR, MODES, PLAYER_RADIUS } from '../../shared/constants.js';
 import { linePos } from '../../shared/sim.js';
@@ -83,9 +83,7 @@ const online = new Online({
 
 const input = new Input(canvas, renderer, {
   command: (cmd) => {
-    if (!session || anyOverlay()) return;
-    if (sessionType === 'online') online.input(cmd);
-    else session.input(cmd);
+    if (!anyOverlay()) sendCommand(cmd);
   },
   click: (x, y, attack) => fx.click(x, y, attack),
   // Ennemi sous le curseur (pour l'auto-attaque au clic droit). En mode histoire : un ennemi, jamais un allié.
@@ -118,6 +116,14 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     $('#res-again').click();
   }
+  // Fenêtre du coffre : les touches 1, 2, 3 choisissent une carte.
+  if (!$('#loot').classList.contains('hidden') && /^(Digit|Numpad)[1-3]$/.test(e.code)) {
+    const card = $$('.loot-card')[Number(e.code.slice(-1)) - 1];
+    if (card) {
+      e.preventDefault();
+      card.click();
+    }
+  }
 }, { capture: true });
 
 function isTypingTarget(e) {
@@ -140,7 +146,7 @@ function showScreen(name) {
   if (inGame && document.activeElement) document.activeElement.blur();
 }
 
-const OVERLAYS = ['results', 'pause', 'settings', 'help', 'build'];
+const OVERLAYS = ['results', 'pause', 'settings', 'help', 'build', 'loot'];
 
 function anyOverlay() {
   return OVERLAYS.some((id) => !$('#' + id).classList.contains('hidden'));
@@ -293,6 +299,7 @@ function endSession() {
   sessionType = null;
   fx.clear();
   mobLook.clear();
+  hideOverlay('loot');
 }
 
 function startSurvival() {
@@ -331,6 +338,29 @@ function startStory() {
   session = new LocalGame({ kind: 'story', name: currentName() });
   sessionType = 'story';
   showScreen('game');
+}
+
+// Envoie une commande de jeu à la partie en cours, locale ou en ligne.
+function sendCommand(cmd) {
+  if (!session) return;
+  if (sessionType === 'online') online.input(cmd);
+  else session.input(cmd);
+}
+
+// ------------------------------------------------------------ coffre (mode histoire)
+
+function openLoot() {
+  const v = session.view();
+  if (!v.story || !v.story.offer || !v.me) return;
+  renderOffer(v.story.offer, v.me, iconCanvas, pickLoot);
+  showOverlay('loot');
+  sfx.play('chest');
+}
+
+// i : indice de la carte, ou -1 pour passer.
+function pickLoot(i) {
+  hideOverlay('loot');
+  sendCommand({ k: 'loot', i });
 }
 
 // ------------------------------------------------------------ en ligne : salon et file
@@ -564,6 +594,7 @@ function initGameChat() {
 // ------------------------------------------------------------ touches globales
 
 function onEscape() {
+  if (!$('#loot').classList.contains('hidden')) return;
   if (!$('#settings').classList.contains('hidden')) return closeSettings();
   if (!$('#help').classList.contains('hidden')) return hideOverlay('help');
   if (!$('#build').classList.contains('hidden')) return hideOverlay('build');
@@ -700,6 +731,7 @@ function updateRematchHint() {
 }
 
 function initResults() {
+  $('#loot-skip').addEventListener('click', () => pickLoot(-1));
   $('#res-again').addEventListener('click', () => {
     hideOverlay('results');
     if (sessionType === 'survival') startSurvival();
@@ -1079,6 +1111,7 @@ function handleEvents(evs) {
         fx.clear();
         lastCount = 0;
         mobLook.clear();
+        hideOverlay('loot');
         if (ev.i > 0) sfx.play('door');
         if (ev.type === 'boss') sfx.play('boss');
         break;
@@ -1109,6 +1142,19 @@ function handleEvents(evs) {
           fx.shake(8);
         }
         break;
+      case 'offer':
+        if (ev.id === view.you) openLoot();
+        break;
+      case 'kit': {
+        const p = playerById(view, ev.id);
+        const rar = RARITIES[ev.rar] || RARITIES[0];
+        if (p) {
+          fx.ring(p.x, p.y, rar.color, 24, 110, 0.5, 6);
+          fx.number(p.x, p.y - 30, ABILITIES[ev.ab].name, rar.color, ev.rar >= 2);
+        }
+        if (ev.id === view.you) sfx.play('pick', 1, ev.rar);
+        break;
+      }
       case 'left': {
         const p = playerById(view, ev.id);
         if (p) fx.pushFeed([{ text: p.name, color: p.color }, { text: ' a quitté la partie', color: '#93a1b0' }]);

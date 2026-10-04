@@ -136,3 +136,17 @@ test('record du mode histoire', () => {
   assert.deepEqual(settings.story, { bestRooms: 15, wins: 3, bestTime: 800 });
   assert.equal(storyBestLine(), 'Meilleure descente : 15 salles sur 15 · 3 victoires, meilleur temps 13:20.0.');
 });
+
+// ---------------------------------------------------------------- coffre
+
+import { lootReplaceText } from '../public/js/story-ui.js';
+
+test('carte de coffre : ce que le sort remplace', () => {
+  const hero = {
+    build: { Q: 'trait', W: null, E: null, R: null, D: 'flash', F: null },
+    rar: { Q: 1, W: 0, E: 0, R: 0, D: 0, F: 0 },
+  };
+  assert.equal(lootReplaceText(hero, { ab: 'salve', rar: 0, slot: 'W' }), 'Touche vide');
+  assert.equal(lootReplaceText(hero, { ab: 'trait', rar: 3, slot: 'Q' }), 'Amélioration : Rare → Légendaire');
+  assert.equal(lootReplaceText(hero, { ab: 'soin', rar: 2, slot: 'D' }), 'Remplace Flash (Commun)');
+});

@@ -817,6 +817,75 @@ input[type="range"] {
   accent-color: var(--chalk);
 }
 
+/* Coffre du mode histoire : une carte par sort proposé, bordée à la couleur de sa rareté */
+.loot-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.loot-card {
+  position: relative;
+  display: grid;
+  justify-items: start;
+  align-content: start;
+  gap: 6px;
+  padding: 14px;
+  background: rgba(16, 22, 31, 0.6);
+  border: 2px solid var(--rar);
+  text-align: left;
+}
+
+.loot-card:hover,
+.loot-card:focus-visible {
+  background: rgba(233, 238, 243, 0.08);
+}
+
+.loot-card canvas {
+  width: 56px;
+  height: 56px;
+}
+
+.loot-key {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  color: var(--mist);
+  font: 700 0.875rem var(--font-b);
+}
+
+.loot-rar {
+  color: var(--rar);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.loot-name {
+  font: 700 1.5625rem/1 var(--font-d);
+}
+
+.loot-slot,
+.loot-repl {
+  margin: 0;
+  color: var(--mist);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.loot-desc {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+@media (max-width: 640px) {
+  .loot-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 .toast {
   position: fixed;
   top: 20px;
