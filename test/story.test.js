@@ -97,3 +97,42 @@ test('prendre une carte place le sort sur sa touche, prêt à être lancé', () 
   assert.equal(slotFor(h, 'purge'), 'F', 'puis la touche vide restante');
   assert.equal(slotFor(h, 'flash'), 'D');
 });
+
+// ---------------------------------------------------------------- ennemis et boss : définitions
+
+import { MOBS, mobDef, MOB_TEAM, ELITE } from '../shared/story/mobs.js';
+import { BOSSES, bossDef } from '../shared/story/bosses.js';
+
+test('définition d\'un ennemi : chapitre, élite et nombre de joueurs', () => {
+  const base = mobDef('m1', 'rodeur');
+  assert.deepEqual(
+    { team: base.team, mob: base.mob, maxHp: base.maxHp, spd: base.spd, r: base.r, cc: base.cc, dmg: base.dmg, elite: base.elite, name: base.name },
+    { team: MOB_TEAM, mob: 'rodeur', maxHp: 34, spd: 255, r: 28, cc: 1, dmg: 10, elite: false, name: 'Rôdeur' },
+  );
+  assert.equal(mobDef('m2', 'rodeur', { chapter: 2 }).maxHp, 71);
+  assert.equal(mobDef('m2', 'tireur', { chapter: 2 }).dmg, 13);
+  const elite = mobDef('m3', 'belier', { chapter: 1, elite: true });
+  assert.equal(elite.maxHp, 225);
+  assert.equal(elite.r, 45);
+  assert.equal(elite.cc, 0.5);
+  assert.equal(elite.name, 'Bélier d\'élite');
+  assert.ok(Math.abs(elite.atkCd - 4.5 * ELITE.cd) < 1e-9);
+  assert.equal(mobDef('m4', 'rodeur', { heroes: 3 }).maxHp, 82);
+  const u = createPlayer(elite, 0);
+  assert.equal(u.hp, 225);
+  assert.equal(u.elite, true);
+  assert.equal(u.mob, 'belier');
+  assert.deepEqual(Object.keys(MOBS), ['rodeur', 'tireur', 'bombe', 'pyro', 'belier', 'sentinelle']);
+});
+
+test('définition d\'un boss : insensible aux contrôles, PV selon le nombre de joueurs', () => {
+  const b = bossDef('m9', 'gardien');
+  assert.equal(b.maxHp, 620);
+  assert.equal(b.cc, 0);
+  assert.equal(b.boss, true);
+  assert.equal(b.mob, 'gardien');
+  assert.equal(b.team, MOB_TEAM);
+  assert.equal(bossDef('m9', 'archonte', 3).maxHp, 2600);
+  assert.deepEqual(Object.keys(BOSSES), ['gardien', 'forgeronne', 'archonte']);
+  assert.equal(createPlayer(b, 0).boss, true);
+});
