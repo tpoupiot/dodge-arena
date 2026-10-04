@@ -1,30 +1,17 @@
 // Rendu canvas : arène, sorts, joueurs, indicateurs de visée et interface de jeu (HUD).
 
-import { ARENA_W, ARENA_H, PLAYER_RADIUS as R, ENV_COLOR, MAX_HP, SUDDEN_DEATH_AT } from '../../shared/constants.js';
-import { abilityOf, AUTO } from '../../shared/abilities.js';
+import { ARENA_W, ARENA_H, PLAYER_RADIUS as R, MAX_HP, SUDDEN_DEATH_AT } from '../../shared/constants.js';
+import { abilityOf, AUTO, RARITIES } from '../../shared/abilities.js';
 import { boundsAt, linePos, lineEnd } from '../../shared/sim.js';
 import { mulberry32, clamp } from '../../shared/util.js';
 import { settings, keyLabel, formatTime } from './settings.js';
+import { FONT_D, FONT_B, C, rgba, mix } from './draw.js';
+import {
+  HOSTILE, floorStyle, drawStoryGround, drawMobs, drawMobOverheads, drawStoryTop, drawStoryOverlay,
+} from './render-story.js';
 
-const FONT_D = '"Big Shoulders Display", "Barlow", sans-serif';
-const FONT_B = '"Barlow", system-ui, sans-serif';
-const C = {
-  night: '#10161f', stone: '#1b2430', stoneHi: '#263241', line: '#33404f',
-  chalk: '#e9eef3', mist: '#93a1b0', self: '#5ee08f', enemy: '#ef4b54', shield: '#f1f5f9', env: ENV_COLOR,
-};
 const SLOT_TINT = { Q: '#38bdf8', W: '#fb923c', E: '#4ade80', R: '#93c5fd', D: '#facc15', F: '#5eead4' };
 const HUD_SLOTS = ['Q', 'W', 'E', 'R', 'D', 'F'];
-
-export function rgba(hex, a) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
-}
-
-function mix(hex, hex2, k) {
-  const a = parseInt(hex.slice(1), 16), b = parseInt(hex2.slice(1), 16);
-  const ch = (s) => Math.round(((a >> s) & 255) * (1 - k) + ((b >> s) & 255) * k);
-  return '#' + ((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1);
-}
 
 // Points de bouclier encore actifs d'un joueur.
 const shieldOf = (st, t) => (st && st.shield > 0 && t < st.shieldUntil ? st.shield : 0);
@@ -38,6 +25,8 @@ export class Renderer {
     this.floor = null;
     this.aw = ARENA_W;
     this.ah = ARENA_H;
+    this.floorStyle = floorStyle(null);   // palette et décor du sol (changent par salle en mode histoire)
+    this.floorKey = this.floorStyle.key;
     this.resize();
   }
 
@@ -86,10 +75,11 @@ export class Renderer {
     g.scale(s, s);
     const cx = this.aw / 2, cy = this.ah / 2;
 
+    const { theme, decor } = this.floorStyle;
     const base = g.createRadialGradient(cx, cy, 40, cx, cy, (980 * this.aw) / ARENA_W);
-    base.addColorStop(0, '#223042');
-    base.addColorStop(0.55, '#19222f');
-    base.addColorStop(1, '#111821');
+    base.addColorStop(0, theme.base[0]);
+    base.addColorStop(0.55, theme.base[1]);
+    base.addColorStop(1, theme.base[2]);
     g.fillStyle = base;
     g.fillRect(0, 0, this.aw, this.ah);
 
@@ -124,40 +114,73 @@ export class Renderer {
       g.fillRect(rng() * this.aw, rng() * this.ah, 1.6, 1.6);
     }
 
-    // Cercles gravés au centre (arène de duel).
+    // Gravures au centre, à la teinte du chapitre. Décor « dalles » : aucune gravure.
+    const ink = (a) => `rgba(${theme.accent},${a})`;
     const engrave = (r, w, a) => {
       g.lineWidth = w;
       g.strokeStyle = `rgba(0,0,0,${a * 1.6})`;
       g.beginPath();
       g.arc(cx, cy + 2, r, 0, Math.PI * 2);
       g.stroke();
-      g.strokeStyle = `rgba(170,200,230,${a})`;
+      g.strokeStyle = ink(a);
       g.beginPath();
       g.arc(cx, cy, r, 0, Math.PI * 2);
       g.stroke();
     };
-    engrave(150, 3, 0.08);
-    engrave(310, 4, 0.07);
-    engrave(330, 1.5, 0.05);
-    engrave(480, 3, 0.05);
-    g.strokeStyle = 'rgba(170,200,230,0.045)';
-    g.lineWidth = 2;
-    for (let i = 0; i < 24; i++) {
-      const a = (i * Math.PI) / 12;
-      const r0 = i % 2 ? 330 : 150, r1 = i % 2 ? 480 : 310;
+    if (decor === 'cercles') {
+      engrave(150, 3, 0.08);
+      engrave(310, 4, 0.07);
+      engrave(330, 1.5, 0.05);
+      engrave(480, 3, 0.05);
+      g.strokeStyle = ink(0.045);
+      g.lineWidth = 2;
+      for (let i = 0; i < 24; i++) {
+        const a = (i * Math.PI) / 12;
+        const r0 = i % 2 ? 330 : 150, r1 = i % 2 ? 480 : 310;
+        g.beginPath();
+        g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+        g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+        g.stroke();
+      }
+      g.fillStyle = ink(0.06);
+      for (let i = 0; i < 48; i++) {
+        const a = (i * Math.PI) / 24;
+        g.save();
+        g.translate(cx + Math.cos(a) * 320, cy + Math.sin(a) * 320);
+        g.rotate(a);
+        g.fillRect(-1.5, -7, 3, 14);
+        g.restore();
+      }
+    } else if (decor === 'runes') {
+      engrave(260, 3, 0.07);
+      engrave(300, 1.5, 0.05);
+      g.strokeStyle = ink(0.09);
+      g.lineWidth = 3;
+      for (let i = 0; i < 12; i++) {
+        const a = (i * Math.PI) / 6;
+        g.save();
+        g.translate(cx + Math.cos(a) * 280, cy + Math.sin(a) * 280);
+        g.rotate(a + Math.PI / 2);
+        g.beginPath();
+        g.moveTo(-8, -9);
+        g.lineTo(8, -9);
+        g.lineTo(0, 9);
+        g.closePath();
+        if (i % 3 === 0) {
+          g.moveTo(-8, 0);
+          g.lineTo(8, 0);
+        }
+        g.stroke();
+        g.restore();
+      }
+      g.strokeStyle = ink(0.05);
+      g.lineWidth = 2;
       g.beginPath();
-      g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
-      g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      g.moveTo(cx - 240, cy);
+      g.lineTo(cx + 240, cy);
+      g.moveTo(cx, cy - 240);
+      g.lineTo(cx, cy + 240);
       g.stroke();
-    }
-    g.fillStyle = 'rgba(170,200,230,0.06)';
-    for (let i = 0; i < 48; i++) {
-      const a = (i * Math.PI) / 24;
-      g.save();
-      g.translate(cx + Math.cos(a) * 320, cy + Math.sin(a) * 320);
-      g.rotate(a);
-      g.fillRect(-1.5, -7, 3, 14);
-      g.restore();
     }
 
     // Ombre portée des murs et liseré.
@@ -217,12 +240,19 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = C.night;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    // L'arène change de taille selon le nombre de joueurs : on recadre et on redessine le sol.
+    // L'arène change de taille selon le nombre de joueurs ou la salle : on recadre et on redessine le sol.
     const aw = (view && view.rules && view.rules.w) || ARENA_W, ah = (view && view.rules && view.rules.h) || ARENA_H;
     if (aw !== this.aw || ah !== this.ah) {
       this.aw = aw;
       this.ah = ah;
       this.resize();
+    }
+    // En mode histoire, le décor change d'une salle à l'autre.
+    const style = floorStyle(view);
+    if (style.key !== this.floorKey) {
+      this.floorKey = style.key;
+      this.floorStyle = style;
+      this.floor = null;
     }
     if (!this.floor) this.buildFloor();
     const sh = fx ? fx.shakeOffset() : { x: 0, y: 0 };
@@ -233,17 +263,24 @@ export class Renderer {
     ctx.setTransform(k, 0, 0, k, ox * dpr, oy * dpr);
     if (view) {
       const t = view.t;
-      const colors = new Map(view.players.map((p) => [p.id, p.color]));
-      this.pos = new Map(view.players.map((p) => [p.id, p]));
+      const units = view.mobs ? [...view.players, ...view.mobs] : view.players;
+      const colors = new Map(units.map((p) => [p.id, p.color]));
+      const other = view.story ? HOSTILE : C.env;   // sort sans lanceur connu
+      this.pos = new Map(units.map((p) => [p.id, p]));
       const spells = [...view.spells];
       this.drawBounds(ctx, view, t);
-      for (const s of spells) this.drawGroundSpell(ctx, s, t, colors.get(s.owner) || C.env);
+      if (view.story) drawStoryGround(ctx, this, view, t);
+      for (const s of spells) this.drawGroundSpell(ctx, s, t, colors.get(s.owner) || other);
+      if (view.mobs) drawMobs(ctx, this, view, t);
       this.drawPlayers(ctx, view, t);
-      for (const s of spells) this.drawAirSpell(ctx, s, t, colors.get(s.owner) || C.env);
+      for (const s of spells) this.drawAirSpell(ctx, s, t, colors.get(s.owner) || other);
       if (ui.aim) this.drawAim(ctx, view, ui.aim);
     }
     if (fx) fx.drawWorld(ctx);
-    if (view) this.drawOverheads(ctx, view, view.t);
+    if (view) {
+      if (view.mobs) drawMobOverheads(ctx, view);
+      this.drawOverheads(ctx, view, view.t);
+    }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this.mode === 'game' && view) this.drawHud(ctx, view, fx, ui);
@@ -682,7 +719,7 @@ export class Renderer {
     }
   }
 
-  drawStatus(ctx, p, st, t) {
+  drawStatus(ctx, p, st, t, rad = R) {
     // Stase : le joueur est figé dans un bloc doré.
     if (t < st.stasisUntil) {
       ctx.fillStyle = 'rgba(250,204,21,0.38)';
@@ -691,7 +728,7 @@ export class Renderer {
       ctx.beginPath();
       for (let i = 0; i < 6; i++) {
         const a = (i * Math.PI) / 3 + Math.PI / 6;
-        ctx.lineTo(p.x + Math.cos(a) * (R + 12), p.y + Math.sin(a) * (R + 12));
+        ctx.lineTo(p.x + Math.cos(a) * (rad + 12), p.y + Math.sin(a) * (rad + 12));
       }
       ctx.closePath();
       ctx.fill();
@@ -706,7 +743,7 @@ export class Renderer {
       ctx.setLineDash([14, 8]);
       ctx.lineDashOffset = -t * 40;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, (R + 16) * k, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, (rad + 16) * k, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -716,7 +753,7 @@ export class Renderer {
       ctx.strokeStyle = 'rgba(253,230,138,0.8)';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, R + 14, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, rad + 14, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
@@ -726,14 +763,14 @@ export class Renderer {
       ctx.strokeStyle = rgba('#ffffff', 0.9);
       ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, R + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
+      ctx.arc(p.x, p.y, rad + 5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * k);
       ctx.stroke();
-      this.drawGlow(ctx, p.color, p.x, p.y, R * 2, 0.35 + 0.4 * k);
+      this.drawGlow(ctx, p.color, p.x, p.y, rad * 2, 0.35 + 0.4 * k);
     }
     if (t < st.slowUntil) {
       ctx.fillStyle = 'rgba(147,197,253,0.28)';
       ctx.beginPath();
-      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
       ctx.fill();
     }
     if (t < st.rootUntil) {
@@ -742,7 +779,7 @@ export class Renderer {
       ctx.setLineDash([9, 7]);
       ctx.lineDashOffset = t * 30;
       ctx.beginPath();
-      ctx.ellipse(p.x, p.y + 6, R + 8, (R + 8) * 0.55, 0, 0, Math.PI * 2);
+      ctx.ellipse(p.x, p.y + 6, rad + 8, (rad + 8) * 0.55, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -750,7 +787,7 @@ export class Renderer {
       ctx.fillStyle = '#fde68a';
       for (let i = 0; i < 3; i++) {
         const a = t * 6 + (i * Math.PI * 2) / 3;
-        const x = p.x + Math.cos(a) * 26, y = p.y - R - 12 + Math.sin(a) * 7;
+        const x = p.x + Math.cos(a) * 26, y = p.y - rad - 12 + Math.sin(a) * 7;
         ctx.beginPath();
         for (let j = 0; j < 8; j++) {
           const r = j % 2 ? 2.5 : 7;
@@ -894,8 +931,10 @@ export class Renderer {
     const t = view.t;
     this.drawAbilityBar(ctx, view, s, t);
     if (view.kind === 'survival') this.drawSurvivalTop(ctx, view, s, t, ui);
+    else if (view.kind === 'story') drawStoryTop(ctx, this, view, s, t);
     else this.drawVersusTop(ctx, view, s, t);
     this.drawCenter(ctx, view, fx, s, t);
+    if (view.kind === 'story') drawStoryOverlay(ctx, this, view, s, t);
     if (fx) this.drawFeed(ctx, fx, s);
     if (settings.showPerf && ui.perf) {
       ctx.save();
@@ -976,17 +1015,21 @@ export class Renderer {
     HUD_SLOTS.forEach((slot, i) => {
       if (i === 4) x += split - gap;
       const ab = abilityOf(me, slot);
-      const ok = allowed.includes(slot);
-      const ready = me.cds[slot] || 0;
-      const remain = Math.max(0, ready - t);
-      const blocked = t < me.stunUntil || t < me.stasisUntil || ((ab.kind === 'dash' || ab.kind === 'blink') && t < me.rootUntil) || !me.alive;
-      this.drawSlot(ctx, x, y0, size, slot, ab, ok, remain, blocked, s);
+      if (!ab) this.drawEmptySlot(ctx, x, y0, size, slot, s);
+      else {
+        const ok = allowed.includes(slot);
+        const remain = Math.max(0, (me.cds[slot] || 0) - t);
+        const blocked = t < me.stunUntil || t < me.stasisUntil || ((ab.kind === 'dash' || ab.kind === 'blink') && t < me.rootUntil) || !me.alive;
+        // Mode histoire : bordure à la couleur de la rareté du sort.
+        const edge = me.rar ? (RARITIES[me.rar[slot]] || RARITIES[0]).color : null;
+        this.drawSlot(ctx, x, y0, size, slot, ab, ok, remain, blocked, s, edge);
+      }
       x += size + gap;
     });
     ctx.restore();
   }
 
-  drawSlot(ctx, x, y, size, slot, ab, ok, remain, blocked, s) {
+  drawSlot(ctx, x, y, size, slot, ab, ok, remain, blocked, s, edge) {
     ctx.save();
     ctx.globalAlpha = ok ? 1 : 0.32;
     const tint = SLOT_TINT[slot];
@@ -1019,8 +1062,9 @@ export class Renderer {
       ctx.fillStyle = 'rgba(5,8,12,0.55)';
       ctx.fillRect(x, y, size, size);
     }
-    ctx.strokeStyle = remain > 0 || !ok ? 'rgba(147,161,176,0.35)' : rgba(mix(tint, '#ffffff', 0.4), 0.85);
-    ctx.lineWidth = 2;
+    if (edge) ctx.strokeStyle = rgba(edge, remain > 0 || !ok ? 0.5 : 1);
+    else ctx.strokeStyle = remain > 0 || !ok ? 'rgba(147,161,176,0.35)' : rgba(mix(tint, '#ffffff', 0.4), 0.85);
+    ctx.lineWidth = edge ? 3 : 2;
     ctx.strokeRect(x + 1, y + 1, size - 2, size - 2);
     if (!ok) {
       ctx.strokeStyle = 'rgba(233,238,243,0.5)';
@@ -1029,7 +1073,30 @@ export class Renderer {
       ctx.lineTo(x + size - 8, y + 8);
       ctx.stroke();
     }
-    // Touche associée
+    this.drawKeyLabel(ctx, x, y, size, slot, s);
+    ctx.restore();
+  }
+
+  // Touche vide du mode histoire : case sombre marquée d'un tiret.
+  drawEmptySlot(ctx, x, y, size, slot, s) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(11,16,24,0.7)';
+    ctx.fillRect(x, y, size, size);
+    ctx.strokeStyle = 'rgba(147,161,176,0.25)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.strokeRect(x + 1, y + 1, size - 2, size - 2);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = 'rgba(147,161,176,0.5)';
+    ctx.beginPath();
+    ctx.moveTo(x + size * 0.38, y + size / 2);
+    ctx.lineTo(x + size * 0.62, y + size / 2);
+    ctx.stroke();
+    this.drawKeyLabel(ctx, x, y, size, slot, s);
+    ctx.restore();
+  }
+
+  drawKeyLabel(ctx, x, y, size, slot, s) {
     const label = keyLabel(settings.binds[slot]);
     ctx.font = `700 ${12 * s}px ${FONT_B}`;
     const lw = Math.max(16 * s, ctx.measureText(label).width + 8 * s);
@@ -1039,7 +1106,6 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, x - 3 * s + lw / 2, y + size - 4.5 * s);
-    ctx.restore();
   }
 
   drawSurvivalTop(ctx, view, s, t, ui) {
@@ -1132,7 +1198,7 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const cx = this.w / 2, cy = this.oy + (this.ah * this.scale) * 0.42;
-    if (phase.name === 'countdown' && view.rules) {
+    if (phase.name === 'countdown' && view.rules && view.kind !== 'story') {
       const rem = view.rules.playAt - t;
       if (rem > 0) {
         const n = Math.ceil(rem);
