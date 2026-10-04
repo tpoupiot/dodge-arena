@@ -776,3 +776,35 @@ test('Forgeronne des braises : éventail, roue de feu, lames, rayons croisés, b
   assert.ok(m.events.filter((e) => e.e === 'sp' && e.s.def === 'rayon').length >= 3);
   assert.ok(hero.hp < hero.maxHp);
 });
+
+test('Archonte du Vide : téléportation, prison, aiguilles, grappin, météores, invocations', () => {
+  const { m, hero, boss, brain, defs, watch } = bossFight('archonte');
+  watch(30);
+  for (const d of ['b_nova', 'b_vide', 'cage', 'b_eruption', 'b_aiguille']) assert.ok(defs.has(d), `${d} : ${[...defs].join()}`);
+  assert.ok(!defs.has('grappin') && !defs.has('meteore'));
+  const jumps = m.events.filter((e) => e.e === 'flash' && e.id === boss.id);
+  assert.ok(jumps.length > 0, 'il se téléporte');
+  for (const j of jumps) assert.ok(Math.hypot(j.x - j.fx, j.y - j.fy) > 1);
+  assert.equal(boss.mv, false, 'il ne marche jamais');
+  assert.ok(volleys(m, 'b_vide').every((n) => n === 10), 'nova de 10 projectiles');
+  assert.ok(volleys(m, 'b_aiguille').every((n) => n === 1), 'une seule aiguille en phase 1');
+  assert.equal(m.events.filter((e) => e.e === 'sp' && e.s.def === 'b_aiguille').length % 8, 0, '8 rayons par balayage');
+  // Phase 2 : grappin suivi d'une implosion, invocation de bombes.
+  boss.hp = boss.maxHp * 0.6;
+  m.drainEvents();
+  watch(30);
+  assert.equal(brain.phase, 2);
+  assert.ok(defs.has('grappin') && defs.has('b_implosion'));
+  assert.equal(m.events.filter((e) => e.e === 'warn').length >= 3, true, '3 bombes annoncées');
+  assert.ok(m.events.some((e) => e.e === 'spawn' && e.u.mob === 'bombe'));
+  // Phase 3 : météores, deux aiguilles opposées.
+  boss.hp = boss.maxHp * 0.3;
+  m.drainEvents();
+  watch(35);
+  assert.equal(brain.phase, 3);
+  assert.ok(defs.has('meteore'));
+  assert.ok(volleys(m, 'meteore').every((n) => n === 4), 'un météore par joueur et trois au hasard');
+  assert.ok(volleys(m, 'b_aiguille').includes(2), 'deux aiguilles opposées');
+  assert.ok(hero.hp < hero.maxHp);
+  assert.ok(m.mobs.size <= 10);
+});

@@ -322,6 +322,86 @@ function forgeronneMove(b, u, t) {
   else u.mv = false;
 }
 
+// ---------------------------------------------------------------- L'Archonte du Vide
+
+// Téléportation loin des joueurs, puis nova : un anneau et 10 projectiles en étoile.
+function nova(b, u, h, t) {
+  const p = b.farPoint(450);
+  const fx = u.x, fy = u.y;
+  u.x = p.x; u.y = p.y; u.tx = p.x; u.ty = p.y;
+  b.m.emit({ e: 'flash', id: u.id, fx: round2(fx), fy: round2(fy), x: u.x, y: u.y, t });
+  b.hold(t, 0.7);
+  b.spell({ kind: 'ring', def: 'b_nova', t0: t, tl: t, ta: t + 0.7, te: t + 0.95, x: u.x, y: u.y, r: 260, th: 70, dmg: 14, stun: 0 });
+  const a0 = b.m.rng() * Math.PI * 2;
+  for (let i = 0; i < 10; i++) {
+    const a = a0 + (i * Math.PI) / 5;
+    b.spell({
+      kind: 'line', def: 'b_vide', t0: t, tl: t + 0.7, ox: u.x, oy: u.y, dx: Math.cos(a), dy: Math.sin(a),
+      speed: 900, range: 1500, radius: 28, ret: false, pierce: false, dmg: 14,
+    });
+  }
+  return 1.2;
+}
+
+// Prison : une cage autour de la cible, puis deux éruptions à l'intérieur.
+function prison(b, u, h, t) {
+  b.hold(t, 0.6, Math.atan2(h.y - u.y, h.x - u.x));
+  b.spell({ kind: 'ring', def: 'cage', t0: t, tl: t, ta: t + 0.6, te: t + 3.2, x: h.x, y: h.y, r: 230, th: 34, dmg: 8, stun: 1, fx: 'stun' });
+  for (const dt of [0.7, 1.6]) {
+    b.at(t + dt, (now) => {
+      const tg = h.alive ? h : b.nearest();
+      if (tg) b.spell({ kind: 'circle', def: 'b_eruption', t0: now, tl: now, td: now + 0.9, x: tg.x, y: tg.y, r: 120, dmg: 18 });
+    });
+  }
+  return 2.2;
+}
+
+// Aiguilles : 8 rayons tournés de 45° en 45°, comme une aiguille qui balaie la salle. Deux aiguilles opposées en phase 3.
+function aiguilles(b, u, h, t) {
+  const a0 = Math.atan2(h.y - u.y, h.x - u.x) + Math.PI / 4;
+  const dir = b.m.rng() < 0.5 ? 1 : -1;
+  const hands = b.phase >= 3 ? 2 : 1;
+  b.hold(t, 0.9);
+  for (let i = 0; i < 8; i++) {
+    const t0 = t + i * 0.28;
+    for (let k = 0; k < hands; k++) {
+      const a = a0 + (dir * i * Math.PI) / 4 + k * Math.PI;
+      b.spell({
+        kind: 'beam', def: 'b_aiguille', t0, tl: t0, ta: t0 + 0.9, te: t0 + 1.1,
+        ax: u.x, ay: u.y, bx: u.x + Math.cos(a) * 1400, by: u.y + Math.sin(a) * 1400, hw: 45, dmg: 20,
+      });
+    }
+  }
+  return 3.1;
+}
+
+// Grappin du vide : attire la cible vers lui, puis une zone explose autour de lui.
+function grappin(b, u, h, t) {
+  const a = Math.atan2(h.y - u.y, h.x - u.x);
+  b.hold(t, 0.5, a);
+  b.spell({
+    kind: 'line', def: 'grappin', t0: t, tl: t + 0.5, ox: u.x, oy: u.y, dx: Math.cos(a), dy: Math.sin(a),
+    speed: 1500, range: 1100, radius: 34, ret: false, pierce: false, dmg: 10, pull: 420, fx: 'pull',
+  });
+  b.at(t + 1, (now) => b.spell({ kind: 'circle', def: 'b_implosion', t0: now, tl: now, td: now + 0.8, x: u.x, y: u.y, r: 200, dmg: 24 }));
+  return 2;
+}
+
+// Pluie de météores : un sur chaque joueur et trois au hasard, deux fois de suite.
+function meteores(b, u, h, t) {
+  const volley = (now) => {
+    const { w, h: H } = b.m.rules;
+    for (const p of b.heroes()) b.spell({ kind: 'circle', def: 'meteore', t0: now, tl: now, td: now + 1.1, x: p.x, y: p.y, r: 200, dmg: 30 });
+    for (let i = 0; i < 3; i++) {
+      b.spell({ kind: 'circle', def: 'meteore', t0: now, tl: now, td: now + 1.1, x: b.m.rng() * w, y: b.m.rng() * H, r: 200, dmg: 30 });
+    }
+  };
+  b.hold(t, 0.6);
+  volley(t);
+  b.at(t + 0.9, volley);
+  return 2.2;
+}
+
 // ---------------------------------------------------------------- kits
 
 // rest : pause après une attaque, par phase. attacks : attaques disponibles à partir de la phase indiquée.
@@ -352,6 +432,20 @@ const KITS = {
       { phase: 1, run: roue },
       { phase: 2, run: lames },
       { phase: 3, run: rayons },
+    ],
+  },
+  // Immobile : il ne se déplace que par téléportation (attaque nova).
+  archonte: {
+    rest: [1.3, 1, 0.7],
+    onPhase(b, u, t) {
+      b.summon('bombe', 3, t);
+    },
+    attacks: [
+      { phase: 1, run: nova },
+      { phase: 1, run: prison },
+      { phase: 1, run: aiguilles },
+      { phase: 2, run: grappin },
+      { phase: 3, run: meteores },
     ],
   },
 };
