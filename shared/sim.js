@@ -11,11 +11,17 @@ import { clamp, round2 } from './util.js';
 // ---------------------------------------------------------------- joueurs
 
 export function createPlayer(def, slot) {
+  const maxHp = def.maxHp ?? MAX_HP;
   return {
     id: def.id, name: def.name, color: def.color, slot, bot: !!def.bot,
-    build: sanitizeBuild(def.build),
+    // Équipe, gabarit et vitesse : par défaut ceux d'un joueur seul dans son équipe.
+    team: def.team ?? def.id, r: def.r ?? PLAYER_RADIUS, maxHp, spd: def.spd ?? MOVE_SPEED, cc: def.cc ?? 1,
+    mob: def.mob || '', elite: !!def.elite, boss: !!def.boss,
+    // loadout (mode histoire) : kit repris tel quel, touches vides comprises.
+    build: def.loadout ? { ...def.loadout.build } : sanitizeBuild(def.build),
+    rar: def.loadout ? { ...def.loadout.rar } : null,
     x: ARENA_W / 2, y: ARENA_H / 2, tx: ARENA_W / 2, ty: ARENA_H / 2, mv: false, ang: 0,
-    hp: MAX_HP, alive: true, left: false,
+    hp: maxHp, alive: true, left: false,
     castUntil: 0, castDur: 0, castSlot: '', rootUntil: 0, stunUntil: 0, slowUntil: 0, slowAmt: 0,
     ghostUntil: 0, boostMul: 1, shield: 0, shieldUntil: 0, spellShieldUntil: 0,
     stasisUntil: 0, markUntil: 0, markBy: null, markDmg: 0,
@@ -32,7 +38,7 @@ export function clonePlayer(p) {
 
 export function resetForRound(p, sp) {
   p.x = sp.x; p.y = sp.y; p.tx = sp.x; p.ty = sp.y; p.mv = false; p.ang = sp.ang;
-  p.hp = MAX_HP; p.alive = !p.left;
+  p.hp = p.maxHp; p.alive = !p.left;
   p.castUntil = 0; p.castSlot = ''; p.rootUntil = 0; p.stunUntil = 0;
   p.slowUntil = 0; p.slowAmt = 0; p.ghostUntil = 0; p.boostMul = 1; p.dash = null;
   p.stasisUntil = 0; p.markUntil = 0; p.markBy = null; p.markDmg = 0;
@@ -67,8 +73,8 @@ export function boundsAt(rules, t) {
 }
 
 export function clampToBounds(p, b) {
-  p.x = clamp(p.x, b.x0 + PLAYER_RADIUS, b.x1 - PLAYER_RADIUS);
-  p.y = clamp(p.y, b.y0 + PLAYER_RADIUS, b.y1 - PLAYER_RADIUS);
+  p.x = clamp(p.x, b.x0 + p.r, b.x1 - p.r);
+  p.y = clamp(p.y, b.y0 + p.r, b.y1 - p.r);
 }
 
 // ---------------------------------------------------------------- états
@@ -79,7 +85,7 @@ export const isCasting = (p, t) => t < p.castUntil;
 export const inStasis = (p, t) => t < p.stasisUntil;
 
 export function speedAt(p, t) {
-  let s = MOVE_SPEED;
+  let s = p.spd;
   if (t < p.slowUntil) s *= 1 - p.slowAmt;
   if (t < p.ghostUntil) s *= p.boostMul || 1;
   return s;
@@ -120,13 +126,13 @@ export function stepPlayer(p, t0, t1, rules, world) {
 // Poursuit la cible puis lance une auto-attaque dès qu'elle est à portée.
 function autoAttack(p, t, rules, world) {
   const tg = world.get(p.atk);
-  if (!tg || !tg.alive || tg.id === p.id) {
+  if (!tg || !tg.alive || tg.team === p.team) {
     p.atk = null;
     return;
   }
   if (p.dash || t < p.castUntil || t < p.stasisUntil) return;
   const dx = tg.x - p.x, dy = tg.y - p.y;
-  if (Math.hypot(dx, dy) <= AUTO.range + PLAYER_RADIUS) {
+  if (Math.hypot(dx, dy) <= AUTO.range + tg.r) {
     p.mv = false;
     p.ang = Math.atan2(dy, dx);
     if (t >= p.atkReady && t >= p.stunUntil && t > rules.playAt && !rules.frozen) {
@@ -148,8 +154,8 @@ function towards(p, x, y, maxD, b) {
   if (d < 1) return null;
   const k = Math.min(d, maxD) / d;
   return {
-    x: clamp(p.x + dx * k, b.x0 + PLAYER_RADIUS, b.x1 - PLAYER_RADIUS),
-    y: clamp(p.y + dy * k, b.y0 + PLAYER_RADIUS, b.y1 - PLAYER_RADIUS),
+    x: clamp(p.x + dx * k, b.x0 + p.r, b.x1 - p.r),
+    y: clamp(p.y + dy * k, b.y0 + p.r, b.y1 - p.r),
   };
 }
 
@@ -159,8 +165,8 @@ export function applyCommand(p, cmd, t, rules, hooks) {
   if (!p.alive || !(t > rules.playAt) || rules.frozen) return false;
   if (cmd.k === 'move') {
     const b = boundsAt(rules, t);
-    p.tx = clamp(cmd.x, b.x0 + PLAYER_RADIUS, b.x1 - PLAYER_RADIUS);
-    p.ty = clamp(cmd.y, b.y0 + PLAYER_RADIUS, b.y1 - PLAYER_RADIUS);
+    p.tx = clamp(cmd.x, b.x0 + p.r, b.x1 - p.r);
+    p.ty = clamp(cmd.y, b.y0 + p.r, b.y1 - p.r);
     p.mv = true;
     p.atk = null;
     return true;
@@ -258,7 +264,7 @@ function applyBuff(p, ab, t) {
     p.mv = false;
     p.atk = null;
   }
-  if (ab.heal) p.hp = Math.min(MAX_HP, p.hp + ab.heal);
+  if (ab.heal) p.hp = Math.min(p.maxHp, p.hp + ab.heal);
   if (ab.cleanse) {
     p.stunUntil = Math.min(p.stunUntil, t);
     p.rootUntil = Math.min(p.rootUntil, t);
@@ -271,7 +277,7 @@ function applyBuff(p, ab, t) {
 // Sert à l'interpolation visuelle entre deux ticks.
 export function extrapolate(p, t, dt, rules) {
   if (dt <= 0 || !p.alive) return { x: p.x, y: p.y };
-  const q = { x: p.x, y: p.y, tx: p.tx, ty: p.ty, mv: p.mv, dash: p.dash, alive: true,
+  const q = { x: p.x, y: p.y, tx: p.tx, ty: p.ty, mv: p.mv, dash: p.dash, alive: true, r: p.r, spd: p.spd,
     stunUntil: p.stunUntil, rootUntil: p.rootUntil, castUntil: p.castUntil,
     stasisUntil: p.stasisUntil, slowUntil: p.slowUntil, slowAmt: p.slowAmt, ghostUntil: p.ghostUntil, boostMul: p.boostMul, ang: p.ang };
   stepPlayer(q, t, t + dt, rules);
