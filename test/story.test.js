@@ -557,3 +557,98 @@ test('coop : chacun son tirage ; un tirage en attente est perdu au changement de
   m.step();
   assert.equal(m.room.offers.has('b'), false);
 });
+
+// ---------------------------------------------------------------- IA des ennemis
+
+// Un joueur seul face à un ennemi du type voulu, à `dist` unités sur sa droite.
+function duelMob(type, { elite = false, dist = 300 } = {}) {
+  const m = solo(1);
+  stepUntil(m, () => m.mobs.size > 0);
+  for (const u of m.mobs.values()) u.alive = false;
+  const hero = m.players.get('a');
+  hero.x = 400; hero.y = 400; hero.tx = 400; hero.ty = 400; hero.mv = false;
+  const mob = m.addMob({ type, elite, x: 400 + dist, y: 400 }, m.time);
+  return { m, hero, mob };
+}
+
+const DUEL_DIST = { rodeur: 300, tireur: 600, bombe: 300, pyro: 700, belier: 500, sentinelle: 600 };
+
+for (const type of Object.keys(DUEL_DIST)) {
+  test(`${type} : touche un joueur immobile, rate un joueur qui s'écarte`, () => {
+    const still = duelMob(type, { dist: DUEL_DIST[type] });
+    stepUntil(still.m, () => still.hero.hp < 100, 60 * 8);
+    assert.ok(still.hero.hp < 100, 'le joueur immobile est touché');
+    assert.equal(still.m.events.find((e) => e.e === 'hit' && e.tid === 'a').by, still.mob.id);
+
+    const { m, hero, mob } = duelMob(type, { dist: DUEL_DIST[type] });
+    stepUntil(m, () => mob.castUntil > m.time, 60 * 8);
+    assert.ok(mob.castUntil > m.time, 'l\'ennemi prépare son attaque');
+    assert.equal(mob.mv, false, 'immobile pendant la préparation');
+    m.botCommand('a', { k: 'move', x: hero.x, y: hero.y + 420 });
+    const until = m.time + 2;
+    stepUntil(m, () => m.time >= until, 60 * 3);
+    assert.equal(hero.hp, 100, 'l\'attaque est esquivée');
+  });
+}
+
+test('un ennemi étourdi ou tué pendant sa préparation perd son attaque', () => {
+  for (const type of Object.keys(DUEL_DIST)) {
+    const { m, hero, mob } = duelMob(type, { dist: DUEL_DIST[type] });
+    stepUntil(m, () => mob.castUntil > m.time, 60 * 8);
+    const spells = [...m.spells.values()].filter((s) => s.owner === mob.id);
+    assert.ok(spells.length > 0, type);
+    m.hit({ id: 99, dmg: 1, stun: 1.5, owner: 'a', team: 'P', def: 'q', kind: 'line' }, mob, m.time, mob.x, mob.y);
+    for (const s of spells) assert.equal(m.spells.has(s.id), false, `${type} : sort annulé`);
+    assert.equal(mob.dash, null, `${type} : charge annulée`);
+    const until = m.time + 1.2;
+    stepUntil(m, () => m.time >= until, 60 * 2);
+    assert.equal(hero.hp, 100, type);
+    assert.ok(mob.alive, `${type} : toujours en vie`);
+  }
+  // Tué pendant la préparation : même résultat.
+  const { m, hero, mob } = duelMob('rodeur');
+  stepUntil(m, () => mob.castUntil > m.time, 60 * 8);
+  m.kill(mob, null, m.time);
+  const until = m.time + 1.2;
+  stepUntil(m, () => m.time >= until, 60 * 2);
+  assert.equal(hero.hp, 100);
+});
+
+test('une bombe disparaît dans son explosion', () => {
+  const { m, hero, mob } = duelMob('bombe');
+  stepUntil(m, () => !mob.alive, 60 * 8);
+  assert.equal(mob.alive, false);
+  assert.equal(hero.hp, 80);
+  assert.equal(m.stats.a.kills, 0, 'personne n\'est crédité');
+});
+
+test('élite : sentinelle à 5 projectiles, contrôles réduits de moitié', () => {
+  const { m, mob } = duelMob('sentinelle', { elite: true, dist: 600 });
+  stepUntil(m, () => mob.castUntil > m.time, 60 * 8);
+  assert.equal([...m.spells.values()].filter((s) => s.owner === mob.id).length, 5);
+  const t = m.time;
+  m.hit({ id: 99, dmg: 1, stun: 2, owner: 'a', team: 'P', def: 'q', kind: 'line' }, mob, t, mob.x, mob.y);
+  assert.ok(Math.abs(mob.stunUntil - (t + 1)) < 1e-9);
+});
+
+test('les ennemis ne se blessent pas entre eux et ne s\'empilent pas', () => {
+  const { m, hero } = duelMob('rodeur');
+  hero.maxHp = 100000; hero.hp = 100000;
+  m.addMob({ type: 'rodeur', elite: false, x: 720, y: 400 }, m.time);
+  m.addMob({ type: 'bombe', elite: false, x: 700, y: 430 }, m.time);
+  const until = m.time + 6;
+  stepUntil(m, () => m.time >= until, 60 * 7);
+  const hits = m.events.filter((e) => e.e === 'hit');
+  assert.ok(hits.length > 0);
+  assert.ok(hits.every((e) => e.tid === 'a'), 'seul le joueur est touché');
+  const rod = [...m.mobs.values()].filter((u) => u.alive && u.mob === 'rodeur');
+  assert.equal(rod.length, 2);
+  assert.ok(Math.hypot(rod[0].x - rod[1].x, rod[0].y - rod[1].y) > 20, 'chacun sa place autour de la cible');
+});
+
+test('un joueur immobile face à un rôdeur finit par perdre', () => {
+  const { m } = duelMob('rodeur');
+  stepUntil(m, () => m.over, 60 * 60);
+  assert.equal(m.over, true);
+  assert.equal(m.result.win, false);
+});

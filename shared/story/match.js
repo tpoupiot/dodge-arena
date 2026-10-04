@@ -6,7 +6,7 @@ import { createPlayer } from '../sim.js';
 import { EnvSpawner } from '../spawner.js';
 import { round2 } from '../util.js';
 import { generateRun, TRAPS, doorZone, entryPoints, ROOMS_PER_CHAPTER, SPAWN_WARN } from './rooms.js';
-import { MOBS, ELITE, MOB_TEAM, mobDef } from './mobs.js';
+import { MOBS, ELITE, MOB_TEAM, mobDef, MobBrain } from './mobs.js';
 import { BOSSES, bossDef } from './bosses.js';
 import { heroDef, drawOffer, applyCard, SKIP_HEAL } from './loot.js';
 
@@ -146,6 +146,7 @@ export class StoryMatch extends Match {
     u.x = s.x; u.y = s.y; u.tx = s.x; u.ty = s.y;
     this.mobs.set(id, u);
     this.units.push(u);
+    if (!s.boss) this.brains.set(id, new MobBrain(this, u, def, t));
     this.emit({ e: 'spawn', u: def, x: u.x, y: u.y, t });
     return u;
   }
@@ -269,6 +270,12 @@ export class StoryMatch extends Match {
   }
 
   // ------------------------------------------------------------ morts et fin de run
+
+  // Un bélier arrêté pendant sa préparation ne charge pas.
+  interrupt(p, t) {
+    if (p.mob && p.dash && t < p.dash.ts) p.dash = null;
+    super.interrupt(p, t);
+  }
 
   kill(p, s, t) {
     super.kill(p, s, t);
