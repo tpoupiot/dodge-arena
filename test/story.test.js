@@ -136,3 +136,87 @@ test('définition d\'un boss : insensible aux contrôles, PV selon le nombre de 
   assert.deepEqual(Object.keys(BOSSES), ['gardien', 'forgeronne', 'archonte']);
   assert.equal(createPlayer(b, 0).boss, true);
 });
+
+// ---------------------------------------------------------------- salles
+
+import {
+  generateRun, CHAPTERS, ROOM_SIZES, BOSS_SIZE, TRAPS, MAX_ALIVE, doorZone, entryPoints,
+} from '../shared/story/rooms.js';
+
+test('la même graine donne la même run, une autre graine une autre run', () => {
+  assert.deepEqual(generateRun(12), generateRun(12));
+  assert.notDeepEqual(generateRun(12), generateRun(13));
+});
+
+test('une run : 3 chapitres de 5 salles, chacun terminé par son boss', () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const rooms = generateRun(seed);
+    assert.equal(rooms.length, 15);
+    rooms.forEach((r, i) => {
+      const c = CHAPTERS[r.chapter];
+      assert.equal(r.index, i);
+      assert.equal(r.chapter, Math.floor(i / 5));
+      assert.equal(r.n, (i % 5) + 1);
+      if (r.n === 5) {
+        assert.equal(r.type, 'boss');
+        assert.equal(r.boss, c.boss);
+        assert.deepEqual({ w: r.w, h: r.h }, BOSS_SIZE);
+        assert.equal(r.trap, null);
+        assert.deepEqual(r.waves, []);
+      } else {
+        assert.equal(r.type, 'combat');
+        assert.equal(r.boss, null);
+        assert.ok(ROOM_SIZES.some((s) => s.w === r.w && s.h === r.h));
+        assert.equal(r.waves.length, [1, 2, 2, 3][r.n - 1]);
+        for (const wave of r.waves) {
+          assert.ok(wave.length >= 1 && wave.length <= MAX_ALIVE);
+          for (const m of wave) assert.ok(c.mobs.includes(m.type), `${m.type} au chapitre ${r.chapter + 1}`);
+        }
+        const elites = r.waves.flat().filter((m) => m.elite);
+        assert.ok(elites.length <= 1);
+        if (elites.length) {
+          assert.ok(r.chapter >= 1 && r.n >= 3, 'élites à partir du chapitre 2, salles 3 et 4');
+          assert.ok(r.waves[r.waves.length - 1].includes(elites[0]), 'dans la dernière vague');
+        }
+      }
+      assert.ok(['E', 'N', 'S'].includes(r.exit));
+      assert.notEqual(r.exit, r.entry);
+      assert.equal(r.entry, i === 0 ? 'W' : { E: 'W', N: 'S', S: 'N' }[rooms[i - 1].exit]);
+      if (r.trap) assert.ok(c.traps.includes(r.trap) && TRAPS[r.trap]);
+    });
+    for (let ch = 0; ch < 3; ch++) {
+      const trapped = rooms.filter((r) => r.chapter === ch && r.trap);
+      assert.equal(trapped.length, CHAPTERS[ch].trapRooms);
+      assert.ok(trapped.every((r) => r.n >= 2 && r.n <= 4), 'jamais la première salle ni celle du boss');
+    }
+  }
+});
+
+test('tailles, portes et décors varient d\'une run à l\'autre', () => {
+  const sizes = new Set(), exits = new Set(), decors = new Set(), elites = new Set();
+  for (let seed = 1; seed <= 30; seed++) {
+    for (const r of generateRun(seed)) {
+      if (r.type === 'combat') sizes.add(`${r.w}x${r.h}`);
+      exits.add(r.exit);
+      decors.add(r.decor);
+      if (r.waves.flat().some((m) => m.elite)) elites.add(r.chapter);
+    }
+  }
+  assert.equal(sizes.size, ROOM_SIZES.length);
+  assert.equal(exits.size, 3);
+  assert.equal(decors.size, 3);
+  assert.deepEqual([...elites].sort(), [1, 2]);
+});
+
+test('porte et points d\'entrée', () => {
+  const room = { w: 1600, h: 900, entry: 'W', exit: 'E' };
+  assert.deepEqual(doorZone(room, 'E'), { x0: 1490, y0: 330, x1: 1600, y1: 570 });
+  assert.deepEqual(doorZone(room, 'W'), { x0: 0, y0: 330, x1: 110, y1: 570 });
+  assert.deepEqual(doorZone(room, 'N'), { x0: 680, y0: 0, x1: 920, y1: 110 });
+  assert.deepEqual(doorZone(room, 'S'), { x0: 680, y0: 790, x1: 920, y1: 900 });
+  const pts = entryPoints(room, 3);
+  assert.deepEqual(pts.map((p) => [p.x, p.y, p.ang]), [[175, 360, 0], [175, 450, 0], [175, 540, 0]]);
+  const south = entryPoints({ ...room, entry: 'S' }, 1)[0];
+  assert.deepEqual([south.x, south.y], [800, 725]);
+  assert.ok(Math.abs(south.ang + Math.PI / 2) < 1e-9, 'tourné vers l\'intérieur de la salle');
+});
