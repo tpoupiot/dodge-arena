@@ -294,6 +294,8 @@ test('Javelot : les dégâts augmentent avec la distance parcourue', () => {
     return 100 - b.hp;
   };
   const near = dmgAt(150), far = dmgAt(ab.range - 100);
+  assert.equal(dmgAt(ab.dmgMaxAt + 40), ab.dmgMax, 'maximum atteint bien avant la portée maximale');
+  assert.ok(ab.dmgMaxAt <= ab.range / 2);
   assert.ok(near >= ab.dmg && near < ab.dmg + 6, `près=${near}`);
   assert.ok(far > ab.dmgMax - 6 && far <= ab.dmgMax, `loin=${far}`);
 });

@@ -71,8 +71,9 @@ export const ABILITIES = {
 		range: 1300,
 		dmg: 8,
 		dmgMax: 28,
+		dmgMaxAt: 600, // distance à partir de laquelle les dégâts sont au maximum
 		cd: 3.5,
-		desc: "Projectile fin : de 8 à 28 dégâts selon la distance parcourue.",
+		desc: "Projectile fin : de 8 à 28 dégâts selon la distance, maximum dès 600 unités.",
 	},
 	// ---------------------------------------------------------------- W
 	eruption: {

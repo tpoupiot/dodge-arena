@@ -213,7 +213,7 @@ export class Match {
         ...base, kind: 'line', tl, ox: p.x, oy: p.y, dx: ux, dy: uy,
         speed: ab.speed, range: ab.range, radius: ab.radius, ret: !!ab.ret, pierce: !!ab.pierce,
         stun: ab.stun || 0, root: ab.root || 0, pull: ab.pull || 0, slow: 0,
-        mark: ab.mark || 0, markDmg: ab.markDmg || 0, dmgMax: ab.dmgMax || 0,
+        mark: ab.mark || 0, markDmg: ab.markDmg || 0, dmgMax: ab.dmgMax || 0, dmgMaxAt: ab.dmgMaxAt || ab.range,
         fx: ab.stun ? 'stun' : ab.root ? 'root' : ab.pull ? 'pull' : ab.mark ? 'mark' : '',
       });
     } else if (ab.kind === 'circle') {
@@ -353,7 +353,7 @@ export class Match {
           const hx = pa.x + (pb.x - pa.x) * bestK, hy = pa.y + (pb.y - pa.y) * bestK;
           hitSet.add(best.id);
           // Javelot : dégâts selon la distance parcourue.
-          const far = s.dmgMax ? clamp(Math.hypot(hx - s.ox, hy - s.oy) / s.range, 0, 1) : 0;
+          const far = s.dmgMax ? clamp(Math.hypot(hx - s.ox, hy - s.oy) / s.dmgMaxAt, 0, 1) : 0;
           this.hit(far ? { ...s, dmg: Math.round(s.dmg + (s.dmgMax - s.dmg) * far) } : s, best, t1, hx, hy);
           s.anyHit = true;
           this.endSpell(s, t1, hx, hy, 'hit');
