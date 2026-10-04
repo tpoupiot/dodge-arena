@@ -114,7 +114,7 @@ export class Online {
         if (this.h.onQueue) this.h.onQueue(m);
         break;
       case 'start':
-        this.game = new NetGame({ players: m.players, you: this.id, settings: m.settings, clock: this.clock });
+        this.game = new NetGame({ players: m.players, you: this.id, settings: m.settings, clock: this.clock, kind: m.kind });
         if (this.h.onStart) this.h.onStart(this.game, m);
         break;
       case 's':

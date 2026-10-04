@@ -7,9 +7,10 @@
 
 import { DT, PLAYER_RADIUS as R } from '../../shared/constants.js';
 import {
-  createPlayer, clonePlayer, unpackInto, stepPlayer, applyCommand, extrapolate, spellEnd, linePos, lineEnd,
+  createPlayer, clonePlayer, unpackInto, unpackMob, stepPlayer, applyCommand, extrapolate, spellEnd, linePos, lineEnd,
 } from '../../shared/sim.js';
 import { clamp, segPointDist2 } from '../../shared/util.js';
+import { StoryState } from '../../shared/story/state.js';
 
 export class TimeSync {
   constructor() {
@@ -51,10 +52,13 @@ export class TimeSync {
 export class NetGame {
   // players : [{ id, name, color, bot }] (ordre = slots), you : notre id,
   // clock : TimeSync partagé (déjà synchronisé pendant le salon)
-  constructor({ players, you, settings, clock }) {
+  // kind : 'versus' ou 'story' (mode histoire en coop)
+  constructor({ players, you, settings, clock, kind = 'versus' }) {
     this.you = you;
     this.settings = settings || {};
-    this.kind = 'versus';
+    this.kind = kind;
+    this.mobs = new Map();   // ennemis du mode histoire, créés par l'événement « spawn »
+    this.story = kind === 'story' ? new StoryState(you) : null;
     this.clock = clock || new TimeSync();
     this.lead = 0.06;
     this.players = new Map();
@@ -77,7 +81,7 @@ export class NetGame {
     this.renderT = 0;
     this.lastFrame = null;
     this.localFx = [];
-    this.world = { get: (id) => this.players.get(id) };
+    this.world = { get: (id) => this.unit(id) };
     this.localHooks = {
       onBlink: (p, fx, fy, t) => this.localFx.push({ e: 'flash', id: p.id, fx, fy, x: p.x, y: p.y, t, local: true }),
       onDash: (p, t) => this.localFx.push({ e: 'dash', id: p.id, t, local: true }),
@@ -88,6 +92,10 @@ export class NetGame {
 
   get ready() {
     return this.snapT !== null && this.clock.synced;
+  }
+
+  unit(id) {
+    return this.players.get(id) || this.mobs.get(id);
   }
 
   // ------------------------------------------------------------ entrées
@@ -125,6 +133,7 @@ export class NetGame {
       for (const id of this.order) {
         if (id !== this.you) before.set(id, this.remotePos(id, A));
       }
+      for (const id of this.mobs.keys()) before.set(id, this.remotePos(id, A));
     }
 
     for (const ev of msg.e) this.applyEvent(ev, out);
@@ -134,9 +143,16 @@ export class NetGame {
       const p = this.players.get(o.i);
       if (p) unpackInto(o, p);
     }
+    if (msg.m) {
+      for (const a of msg.m) {
+        const u = this.mobs.get(a[0]);
+        if (u) unpackMob(a, u);
+      }
+    }
 
-    // Lissage des adversaires : on absorbe le saut entre ancienne et nouvelle extrapolation.
+    // Lissage des adversaires et des ennemis : on absorbe le saut entre ancienne et nouvelle extrapolation.
     for (const [id, old] of before) {
+      if (!this.unit(id)) continue;   // ennemi mort depuis
       const now2 = this.remotePos(id, A, true);
       // old inclut déjà l'ancien décalage : le nouveau décalage garantit la continuité à l'écran.
       const r = this.remote.get(id) || { ox: 0, oy: 0 };
@@ -152,7 +168,42 @@ export class NetGame {
   }
 
   applyEvent(ev, out) {
+    if (this.story) this.story.apply(ev);
     switch (ev.e) {
+      case 'room':
+        this.rules = { ...ev.rules };
+        this.phase = { name: 'countdown', round: ev.i + 1, scores: {}, winner: null, until: ev.rules.playAt };
+        this.spells.clear();
+        for (const id of this.mobs.keys()) this.remote.delete(id);
+        this.mobs.clear();
+        this.pending = this.pending.filter((p) => p.t > ev.t);
+        out.push(ev);
+        break;
+      case 'spawn': {
+        const u = createPlayer(ev.u, 0);
+        u.x = ev.x; u.y = ev.y; u.tx = ev.x; u.ty = ev.y;
+        this.mobs.set(u.id, u);
+        out.push(ev);
+        break;
+      }
+      case 'die':
+        if (this.mobs.delete(ev.id)) this.remote.delete(ev.id);
+        out.push(ev);
+        break;
+      case 'kit': {
+        const p = this.players.get(ev.id);
+        if (p) {
+          p.build[ev.slot] = ev.ab;
+          p.rar[ev.slot] = ev.rar;
+        }
+        out.push(ev);
+        break;
+      }
+      case 'storyEnd':
+        this.rules.frozen = true;
+        this.phase = { ...this.phase, name: 'over' };
+        out.push(ev);
+        break;
       case 'round':
         this.rules = { ...ev.rules };
         this.phase = { name: 'countdown', round: ev.round, scores: ev.scores, winner: null, until: ev.rules.playAt };
@@ -282,7 +333,7 @@ export class NetGame {
 
   // Position affichée d'un adversaire au temps A (dernier état serveur extrapolé).
   remotePos(id, A, noSmooth) {
-    const p = this.players.get(id);
+    const p = this.unit(id);
     if (!p || this.snapT === null) return { x: 0, y: 0 };
     let x, y;
     if (!p.alive || A <= this.snapT) {
@@ -311,15 +362,21 @@ export class NetGame {
     return { x: e.x + this.corr.x, y: e.y + this.corr.y };
   }
 
-  // Masque un projectile dès qu'il touche visuellement un joueur (le serveur confirme ensuite).
+  // Masque un projectile dès qu'il touche visuellement une unité d'une autre équipe (le serveur confirme ensuite).
   predictHits(A) {
     const prev = this._prevA ?? A;
     this._prevA = A;
     const timeout = Math.max(0.25, this.clock.rtt + 0.12);
-    const pos = new Map();
+    const pos = [];   // position affichée, rayon et équipe de chaque unité vivante
     for (const id of this.order) {
       const p = id === this.you ? this.local : this.players.get(id);
-      if (p && p.alive) pos.set(id, id === this.you ? this.localPos() : this.remotePos(id, A));
+      if (!p || !p.alive) continue;
+      const q = id === this.you ? this.localPos() : this.remotePos(id, A);
+      pos.push({ x: q.x, y: q.y, r: p.r, team: p.team });
+    }
+    for (const [id, u] of this.mobs) {
+      const q = this.remotePos(id, A);
+      pos.push({ x: q.x, y: q.y, r: u.r, team: u.team });
     }
     for (const s of this.spells.values()) {
       if (s.kind !== 'line' || s.pierce || s.cut < Infinity) continue; // auto-attaques : le serveur décide
@@ -332,10 +389,10 @@ export class NetGame {
       }
       if (s.noPredict || A < s.tl || A > lineEnd(s)) continue;
       const a = linePos(s, Math.max(s.tl, prev)), b = linePos(s, A);
-      const rr = (s.radius + R) ** 2;
-      for (const [id, p] of pos) {
-        if (id === s.owner) continue;
-        if (segPointDist2(a.x, a.y, b.x, b.y, p.x, p.y) < rr) {
+      const team = s.team ?? s.owner;   // l'équipe n'est envoyée que si elle diffère du lanceur
+      for (const p of pos) {
+        if (team != null && p.team === team) continue;
+        if (segPointDist2(a.x, a.y, b.x, b.y, p.x, p.y) < (s.radius + p.r) ** 2) {
           s.hiddenAt = A;
           break;
         }
@@ -354,9 +411,9 @@ export class NetGame {
       const pos = isYou ? this.localPos() : this.remotePos(id, A);
       players.push({ id, name: p.name, color: p.color, slot: p.slot, bot: p.bot, x: pos.x, y: pos.y, st, isYou, alive: st.alive && !p.left, hp: p.hp });
     }
-    return {
+    const view = {
       t: A,
-      kind: 'versus',
+      kind: this.kind,
       rules: this.rules,
       phase: this.phase,
       you: this.you,
@@ -365,6 +422,16 @@ export class NetGame {
       spells: [...this.spells.values()],
       roundsToWin: this.settings.roundsToWin,
     };
+    if (this.story) {
+      this.story.prune(A);
+      view.story = this.story;
+      view.mobs = [];
+      for (const [id, u] of this.mobs) {
+        const pos = this.remotePos(id, A);
+        view.mobs.push({ id, name: u.name, color: u.color, x: pos.x, y: pos.y, st: u, alive: u.alive, hp: u.hp });
+      }
+    }
+    return view;
   }
 }
 
@@ -372,5 +439,6 @@ export function cmdToWire(cmd) {
   if (cmd.k === 'move') return { k: 'move', x: Math.round(cmd.x * 10) / 10, y: Math.round(cmd.y * 10) / 10 };
   if (cmd.k === 'cast') return { k: 'cast', slot: cmd.slot, x: Math.round(cmd.x * 10) / 10, y: Math.round(cmd.y * 10) / 10 };
   if (cmd.k === 'attack') return { k: 'attack', id: cmd.id };
+  if (cmd.k === 'loot') return { k: 'loot', i: cmd.i };
   return { k: cmd.k };
 }
