@@ -744,3 +744,35 @@ test('mort d\'un boss : invocations, annonces et sorts disparaissent, plus rien 
   assert.equal([...m.spells.values()].filter((s) => s.team === 'M').length, 0, 'aucune attaque programmée ne part après sa mort');
   assert.equal(m.room.cleared, true);
 });
+
+test('Forgeronne des braises : éventail, roue de feu, lames, rayons croisés, bond d\'esquive', () => {
+  const { m, hero, boss, brain, defs, watch } = bossFight('forgeronne');
+  watch(20);
+  assert.ok(defs.has('b_eventail') && defs.has('b_roue'), [...defs].join());
+  assert.ok(!defs.has('boomerang') && !defs.has('rayon'));
+  assert.ok(volleys(m, 'b_eventail').every((n) => n === 5), 'éventail de 5 projectiles');
+  assert.ok(volleys(m, 'b_roue').every((n) => n === 12), 'roue de 12 projectiles par vague');
+  assert.ok(volleys(m, 'b_roue').length >= 2, 'deux vagues');
+  // Elle s'écarte d'un bond quand un joueur approche.
+  hero.x = boss.x + 100; hero.y = boss.y; hero.tx = hero.x; hero.ty = hero.y;
+  m.drainEvents();
+  stepUntil(m, () => m.events.some((e) => e.e === 'dash' && e.id === boss.id), 60 * 8);
+  assert.ok(m.events.some((e) => e.e === 'dash' && e.id === boss.id));
+  stepUntil(m, () => !boss.dash, 30);
+  assert.ok(Math.hypot(hero.x - boss.x, hero.y - boss.y) > 250);
+  // Phase 2 : éventail de 7, lames boomerang.
+  boss.hp = boss.maxHp * 0.6;
+  m.drainEvents();
+  watch(20);
+  assert.equal(brain.phase, 2);
+  assert.ok(volleys(m, 'b_eventail').includes(7));
+  assert.ok(volleys(m, 'boomerang').includes(3), 'trois lames');
+  // Phase 3 : rayons croisés, trois vagues de roue.
+  boss.hp = boss.maxHp * 0.3;
+  m.drainEvents();
+  watch(25);
+  assert.equal(brain.phase, 3);
+  assert.ok(defs.has('rayon'));
+  assert.ok(m.events.filter((e) => e.e === 'sp' && e.s.def === 'rayon').length >= 3);
+  assert.ok(hero.hp < hero.maxHp);
+});

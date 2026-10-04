@@ -223,6 +223,105 @@ function charge(b, u, h, t) {
   return 3.05;
 }
 
+// ---------------------------------------------------------------- La Forgeronne des braises
+
+// Éventail de braises : 5 projectiles sur 50°, 7 en phase 2. Phase 3 : un second éventail décalé d'un demi-pas.
+function eventail(b, u, h, t) {
+  const n = b.phase >= 2 ? 7 : 5;
+  const fan = (now, shift) => {
+    const tg = h.alive ? h : b.nearest();
+    if (!tg) return;
+    const a0 = Math.atan2(tg.y - u.y, tg.x - u.x);
+    const step = (50 * DEG) / (n - 1);
+    b.hold(now, 0.6, a0);
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i - (n - 1) / 2 + shift) * step;
+      b.spell({
+        kind: 'line', def: 'b_eventail', t0: now, tl: now + 0.6, ox: u.x, oy: u.y, dx: Math.cos(a), dy: Math.sin(a),
+        speed: 1150, range: 1500, radius: 26, ret: false, pierce: false, dmg: 12,
+      });
+    }
+  };
+  fan(t, 0);
+  if (b.phase < 3) return 0.9;
+  b.at(t + 0.5, (now) => fan(now, 0.5));
+  return 1.4;
+}
+
+// Roue de feu : 12 projectiles dans toutes les directions, puis une vague tournée de 15°. Trois vagues en phase 3.
+function roue(b, u, h, t) {
+  const waves = b.phase >= 3 ? 3 : 2;
+  b.hold(t, 0.7 * waves);
+  for (let w = 0; w < waves; w++) {
+    const t0 = t + w * 0.7;
+    for (let i = 0; i < 12; i++) {
+      const a = (i * 30 + w * 15) * DEG;
+      b.spell({
+        kind: 'line', def: 'b_roue', t0, tl: t0 + 0.7, ox: u.x, oy: u.y, dx: Math.cos(a), dy: Math.sin(a),
+        speed: 800, range: 1600, radius: 28, ret: false, pierce: false, dmg: 12,
+      });
+    }
+  }
+  return 0.7 * waves + 0.4;
+}
+
+// Lames boomerang : trois lames qui partent puis reviennent en traversant tout.
+function lames(b, u, h, t) {
+  const a0 = Math.atan2(h.y - u.y, h.x - u.x);
+  b.hold(t, 0.6, a0);
+  for (const off of [-25, 0, 25]) {
+    const a = a0 + off * DEG;
+    b.spell({
+      kind: 'line', def: 'boomerang', t0: t, tl: t + 0.6, ox: u.x, oy: u.y, dx: Math.cos(a), dy: Math.sin(a),
+      speed: 1100, range: 900, radius: 40, ret: true, pierce: true, dmg: 10,
+    });
+  }
+  return 2.4;
+}
+
+// Rayons croisés : trois rayons qui se croisent sur la position de la cible.
+function rayons(b, u, h, t) {
+  const { w, h: H } = b.m.rules;
+  const cx = clamp(h.x, 1, w - 1), cy = clamp(h.y, 1, H - 1);
+  const a0 = b.m.rng() * Math.PI;
+  b.hold(t, 0.8);
+  for (let i = 0; i < 3; i++) {
+    const a = a0 + (i * Math.PI) / 3, ux = Math.cos(a), uy = Math.sin(a);
+    const da = rayToRect(cx, cy, ux, uy, 0, 0, w, H), db = rayToRect(cx, cy, -ux, -uy, 0, 0, w, H);
+    const t0 = t + i * 0.35;
+    b.spell({
+      kind: 'beam', def: 'rayon', t0, tl: t0, ta: t0 + 1, te: t0 + 1.25,
+      ax: cx + ux * da, ay: cy + uy * da, bx: cx - ux * db, by: cy - uy * db, hw: 55, dmg: 22,
+    });
+  }
+  return 2.2;
+}
+
+// Se tient à distance. S'écarte d'un bond si un joueur approche à moins de 250 (une fois toutes les 6 s).
+function forgeronneMove(b, u, t) {
+  const h = b.nearest();
+  if (!h) return;
+  const dx = h.x - u.x, dy = h.y - u.y, d = Math.hypot(dx, dy) || 1;
+  if (d < 250 && t >= b.bondAt) {
+    b.bondAt = t + 6;
+    const { w, h: H } = b.m.rules;
+    let tx = u.x - (dx / d) * 420, ty = u.y - (dy / d) * 420;
+    if (tx < u.r || tx > w - u.r || ty < u.r || ty > H - u.r) {
+      // Dos au mur : bond vers le centre de la salle.
+      const cx = w / 2 - u.x, cy = H / 2 - u.y, c = Math.hypot(cx, cy) || 1;
+      tx = u.x + (cx / c) * 420;
+      ty = u.y + (cy / c) * 420;
+    }
+    u.mv = false;
+    u.dash = { k: 'dash', fx: u.x, fy: u.y, tx: clamp(tx, u.r, w - u.r), ty: clamp(ty, u.r, H - u.r), ts: t, te: t + 0.2 };
+    b.m.emit({ e: 'dash', id: u.id, t });
+    return;
+  }
+  if (d > 700) b.go(h.x - (dx / d) * 600, h.y - (dy / d) * 600);
+  else if (d < 450) b.go(u.x - (dx / d) * 200, u.y - (dy / d) * 200);
+  else u.mv = false;
+}
+
 // ---------------------------------------------------------------- kits
 
 // rest : pause après une attaque, par phase. attacks : attaques disponibles à partir de la phase indiquée.
@@ -243,6 +342,16 @@ const KITS = {
       { phase: 1, run: poing },
       { phase: 2, run: eboulement },
       { phase: 3, run: charge },
+    ],
+  },
+  forgeronne: {
+    rest: [1.4, 1, 0.7],
+    move: forgeronneMove,
+    attacks: [
+      { phase: 1, run: eventail },
+      { phase: 1, run: roue },
+      { phase: 2, run: lames },
+      { phase: 3, run: rayons },
     ],
   },
 };
