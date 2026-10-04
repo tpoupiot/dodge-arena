@@ -813,7 +813,7 @@ export class Renderer {
       ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
       // Le bouclier prolonge la barre de vie (la barre se tasse s'il dépasse le maximum).
       const sh = shieldOf(p.st, t), tot = Math.max(MAX_HP, hp + sh);
-      ctx.fillStyle = p.isYou ? C.self : C.enemy;
+      ctx.fillStyle = p.isYou ? C.self : view.kind === 'story' ? p.color : C.enemy;
       ctx.fillRect(x, y, (w * hp) / tot, h);
       ctx.fillStyle = C.shield;
       ctx.fillRect(x + (w * hp) / tot, y, (w * sh) / tot, h);

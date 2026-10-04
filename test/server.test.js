@@ -186,6 +186,21 @@ test('salon histoire : trois places, pas d\'IA, démarre quand les présents son
   a.send({ type: 'leave' });
 });
 
+test('salon histoire : démarre quand le dernier joueur pas prêt part', async () => {
+  const a = await player('Ada');
+  a.send({ type: 'create', mode: 'story' });
+  const room = await a.waitType('room');
+  const b = await player('Bo');
+  b.send({ type: 'join', code: room.code });
+  await a.waitType('room', 2000, (m) => m.players.length === 2);
+  a.send({ type: 'ready', v: true });
+  await a.waitType('room', 2000, (m) => m.players.some((p) => p.ready));
+  b.send({ type: 'leave' });
+  const start = await a.waitType('start', 2000);
+  assert.equal(start.players.length, 1);
+  a.send({ type: 'leave' });
+});
+
 test('salon histoire : un joueur seul lance la run ; pas de partie rapide', async () => {
   const a = await player('Solo');
   a.send({ type: 'queue', mode: 'story' });

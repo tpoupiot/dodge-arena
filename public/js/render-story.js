@@ -416,7 +416,7 @@ export function drawStoryTop(ctx, r, view, s, t) {
   let y = 30 * s;
   ctx.textAlign = 'left';
   for (const p of view.players) {
-    if (p.isYou) continue;
+    if (p.isYou || p.left) continue;
     const w = 150 * s, h = 8 * s, x = 18;
     ctx.globalAlpha = p.alive ? 1 : 0.5;
     ctx.fillStyle = p.color;
@@ -437,6 +437,9 @@ export function drawStoryTop(ctx, r, view, s, t) {
 
 function drawBossBar(ctx, r, boss, info, s) {
   const w = Math.min(560 * s, r.w * 0.5), h = 16 * s, x = (r.w - w) / 2, y = 46 * s;
+  // Bandeau sombre derrière le nom et la barre : le HUD reste lisible sur l'arène.
+  ctx.fillStyle = 'rgba(8,12,18,0.72)';
+  ctx.fillRect(x - 14 * s, 20 * s, w + 28 * s, y + h + 9 * s - 20 * s);
   ctx.font = `700 ${17 * s}px ${FONT_B}`;
   ctx.fillStyle = mix(boss.color, '#ffffff', 0.4);
   ctx.fillText(BOSSES[info.key].name, r.w / 2, 32 * s);

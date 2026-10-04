@@ -41,7 +41,7 @@ const ENV_DESC = {
 };
 
 let session = null; // LocalGame ou NetGame
-let sessionType = null; // 'survival' | 'bots' | 'online'
+let sessionType = null; // 'survival' | 'bots' | 'online' | 'story'
 let screen = 'menu'; // 'menu' | 'queue' | 'lobby' | 'game'
 let demo = makeDemo();
 let lastRoom = null;

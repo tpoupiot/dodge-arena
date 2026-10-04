@@ -5,7 +5,7 @@ import { MOB_TEAM } from './mobs.js';
 import { MAX_ALIVE, SPAWN_WARN } from './rooms.js';
 
 export const BOSSES = {
-  gardien: { name: 'Le Gardien de pierre', color: '#d6d3d1', hp: 620, spd: 150, r: 80 },
+  gardien: { name: 'Le Gardien de pierre', color: '#d4a373', hp: 620, spd: 150, r: 80 },
   forgeronne: { name: 'La Forgeronne des braises', color: '#fb923c', hp: 780, spd: 230, r: 64 },
   archonte: { name: 'L\'Archonte du Vide', color: '#d946ef', hp: 1000, spd: 0, r: 72 },
 };

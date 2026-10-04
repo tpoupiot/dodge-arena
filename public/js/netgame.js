@@ -5,7 +5,7 @@
 // Tout est rendu au "temps d'action" : l'instant serveur où nos commandes prendront effet.
 // Ce module n'utilise pas le DOM : il est testable dans Node.
 
-import { DT, PLAYER_RADIUS as R } from '../../shared/constants.js';
+import { DT } from '../../shared/constants.js';
 import {
   createPlayer, clonePlayer, unpackInto, unpackMob, stepPlayer, applyCommand, extrapolate, spellEnd, linePos, lineEnd,
 } from '../../shared/sim.js';
@@ -190,6 +190,12 @@ export class NetGame {
         if (this.mobs.delete(ev.id)) this.remote.delete(ev.id);
         out.push(ev);
         break;
+      case 'left': {
+        const p = this.players.get(ev.id);
+        if (p) p.left = true;
+        out.push(ev);
+        break;
+      }
       case 'kit': {
         const p = this.players.get(ev.id);
         if (p) {
@@ -409,7 +415,7 @@ export class NetGame {
       const isYou = id === this.you;
       const st = isYou && this.local ? this.local : p;
       const pos = isYou ? this.localPos() : this.remotePos(id, A);
-      players.push({ id, name: p.name, color: p.color, slot: p.slot, bot: p.bot, x: pos.x, y: pos.y, st, isYou, alive: st.alive && !p.left, hp: p.hp });
+      players.push({ id, name: p.name, color: p.color, slot: p.slot, bot: p.bot, x: pos.x, y: pos.y, st, isYou, alive: st.alive && !p.left, hp: p.hp, left: !!p.left });
     }
     const view = {
       t: A,

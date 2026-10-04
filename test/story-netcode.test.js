@@ -99,8 +99,13 @@ test('en ligne : salle, ennemis et kit suivent le serveur, la prédiction reste 
   m.kill(sm, null, m.time);
   run(0.3);
   assert.ok(!ng.view().mobs.some((x) => x.id === sm.id));
+  // Un coéquipier qui quitte la run n'est plus affiché comme « à terre ».
+  assert.ok(!ng.view().players.find((x) => x.id === 'b').left);
+  m.removePlayer('b');
+  run(0.3);
+  assert.equal(ng.view().players.find((x) => x.id === 'b').left, true);
   // Fin de run.
-  for (const id of ['a', 'b']) {
+  for (const id of ['a']) {
     const p = m.players.get(id);
     if (p.alive) m.kill(p, null, m.time);
   }

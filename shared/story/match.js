@@ -102,7 +102,7 @@ export class StoryMatch extends Match {
     this.room = {
       def, wave: -1, cleared: false, heroes: present.length,
       chest: null, offers: new Map(),
-      exit: doorZone(def, def.exit), exitSince: null, inExit: 0, exitOf: 0,
+      exit: doorZone(def, def.exit), exitSince: null, inExit: 0, exitOf: 0, armed: new Set(),
     };
     this.emit({
       e: 'room', t, rules: { ...this.rules },
@@ -229,7 +229,10 @@ export class StoryMatch extends Match {
     for (const p of this.heroes()) {
       if (!p.alive) continue;
       alive++;
-      if (p.x >= z.x0 && p.x <= z.x1 && p.y >= z.y0 && p.y <= z.y1) inside++;
+      const in_ = p.x >= z.x0 && p.x <= z.x1 && p.y >= z.y0 && p.y <= z.y1;
+      // Armé quand on le voit hors de la porte : celui qui y était à la fin du combat ne saute pas le coffre.
+      if (!in_) room.armed.add(p.id);
+      else if (room.armed.has(p.id)) inside++;
     }
     if (!inside) room.exitSince = null;
     else if (room.exitSince === null) room.exitSince = t;

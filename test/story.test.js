@@ -240,6 +240,8 @@ function clearRoom(m) {
     for (const u of m.mobs.values()) if (u.alive) m.kill(u, null, m.time);
     return m.room.cleared || m.over;
   });
+  // Un pas avec les héros hors de la porte : ils y entrent ensuite, comme en jeu.
+  if (m.room.cleared) m.step();
 }
 
 // Place un joueur au milieu de la porte de sortie.
@@ -388,6 +390,28 @@ test('vider les 15 salles donne la victoire ; battre un boss soigne', () => {
   assert.equal(m.events.filter((e) => e.e === 'room').length, 15);
   assert.equal(m.events.filter((e) => e.e === 'clear').length, 14, 'pas de coffre après le dernier boss');
   assert.equal(m.events.filter((e) => e.e === 'spawn' && e.u.boss).length, 3);
+});
+
+test('salle vidée avec le héros déjà dans la porte : le coffre n\'est pas sauté', () => {
+  const m = solo(1);
+  stepUntil(m, () => m.room.wave === 0 && m.mobs.size > 0);
+  toExit(m, 'a');
+  stepUntil(m, () => {
+    for (const u of m.mobs.values()) if (u.alive) m.kill(u, null, m.time);
+    return m.room.cleared;
+  });
+  m.drainEvents();
+  stepUntil(m, () => false, 60 * 3);
+  assert.ok(m.room.chest, 'le coffre est apparu');
+  assert.equal(m.room.def.index, 0, 'pas de changement de salle');
+  assert.ok(m.room.cleared);
+  // Il sort de la porte puis y revient : salle suivante.
+  const p = m.players.get('a'), z = m.room.exit;
+  p.x = z.x0 - 200; p.tx = p.x;
+  stepUntil(m, () => false, 3);
+  toExit(m, 'a');
+  stepUntil(m, () => m.room.def.index === 1, 10);
+  assert.equal(m.room.def.index, 1);
 });
 
 test('coop : on change de salle quand tous les vivants sont dans la porte, ou 12 s après le premier', () => {
@@ -750,7 +774,9 @@ test('Forgeronne des braises : éventail, roue de feu, lames, rayons croisés, b
   watch(20);
   assert.ok(defs.has('b_eventail') && defs.has('b_roue'), [...defs].join());
   assert.ok(!defs.has('boomerang') && !defs.has('rayon'));
+  assert.ok(volleys(m, 'b_eventail').length > 0, 'au moins une salve de b_eventail');
   assert.ok(volleys(m, 'b_eventail').every((n) => n === 5), 'éventail de 5 projectiles');
+  assert.ok(volleys(m, 'b_roue').length > 0, 'au moins une salve de b_roue');
   assert.ok(volleys(m, 'b_roue').every((n) => n === 12), 'roue de 12 projectiles par vague');
   assert.ok(volleys(m, 'b_roue').length >= 2, 'deux vagues');
   // Elle s'écarte d'un bond quand un joueur approche.
@@ -786,7 +812,9 @@ test('Archonte du Vide : téléportation, prison, aiguilles, grappin, météores
   assert.ok(jumps.length > 0, 'il se téléporte');
   for (const j of jumps) assert.ok(Math.hypot(j.x - j.fx, j.y - j.fy) > 1);
   assert.equal(boss.mv, false, 'il ne marche jamais');
+  assert.ok(volleys(m, 'b_vide').length > 0, 'au moins une salve de b_vide');
   assert.ok(volleys(m, 'b_vide').every((n) => n === 10), 'nova de 10 projectiles');
+  assert.ok(volleys(m, 'b_aiguille').length > 0, 'au moins une salve de b_aiguille');
   assert.ok(volleys(m, 'b_aiguille').every((n) => n === 1), 'une seule aiguille en phase 1');
   assert.equal(m.events.filter((e) => e.e === 'sp' && e.s.def === 'b_aiguille').length % 8, 0, '8 rayons par balayage');
   // Phase 2 : grappin suivi d'une implosion, invocation de bombes.
@@ -803,6 +831,7 @@ test('Archonte du Vide : téléportation, prison, aiguilles, grappin, météores
   watch(35);
   assert.equal(brain.phase, 3);
   assert.ok(defs.has('meteore'));
+  assert.ok(volleys(m, 'meteore').length > 0, 'au moins une salve de meteore');
   assert.ok(volleys(m, 'meteore').every((n) => n === 4), 'un météore par joueur et trois au hasard');
   assert.ok(volleys(m, 'b_aiguille').includes(2), 'deux aiguilles opposées');
   assert.ok(hero.hp < hero.maxHp);

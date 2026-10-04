@@ -320,6 +320,7 @@ class Room {
     if (this.hostId === c.id) this.hostId = this.humans()[0].id;
     this.system(`${c.name} a quitté le salon.`);
     this.broadcastRoom();
+    if (this.state === 'lobby') this.maybeStart();
   }
 
   isHost(c) {
