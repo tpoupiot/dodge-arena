@@ -97,6 +97,7 @@ export class BossBrain {
       this.phase = phase;
       this.rot = [];
       this.m.emit({ e: 'boss', id: u.id, key: u.mob, phase, t });
+      if (phase === 3) this.m.say(`boss${this.m.room.def.chapter + 1}p3`);
       if (this.kit.onPhase) this.kit.onPhase(this, u, t);
     }
     if (t >= this.busyUntil) {

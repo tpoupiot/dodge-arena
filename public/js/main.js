@@ -646,6 +646,7 @@ function showSurvivalResults(survived, dodges, record, prev) {
     : `Ton record en difficulté ${label} : ${formatTime(prev)}.`;
   $('#res-table').textContent = '';
   $('#res-kit').textContent = '';
+  $('#res-story').textContent = '';
   $('#res-hint').textContent = `${dodges} sort${dodges > 1 ? 's' : ''} esquivé${dodges > 1 ? 's' : ''}. Espace pour rejouer.`;
   $('#res-again').textContent = 'Rejouer';
   $('#res-menu').textContent = 'Menu';
@@ -681,6 +682,7 @@ function showVersusResults(ev, players) {
   const table = $('#res-table');
   table.textContent = '';
   $('#res-kit').textContent = '';
+  $('#res-story').textContent = '';
   const head = document.createElement('tr');
   for (const [txt, num] of [['Joueur', false], ['Manches', true], ['Éliminations', true], ['Dégâts', true], ['Précision', true]]) {
     const th = document.createElement('th');

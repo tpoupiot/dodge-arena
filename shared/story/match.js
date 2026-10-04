@@ -57,6 +57,11 @@ export class StoryMatch extends Match {
     }
   }
 
+  // Demande aux clients d'afficher un texte de l'histoire (clé de SCRIPT).
+  say(k) {
+    this.emit({ e: 'say', k, t: this.time });
+  }
+
   // ------------------------------------------------------------ salles
 
   enterRoom(i) {
@@ -96,6 +101,9 @@ export class StoryMatch extends Match {
       i, ch: def.chapter, n: def.n, of: ROOMS_PER_CHAPTER, type: def.type, decor: def.decor,
       entry: def.entry, exit: def.exit, door: this.room.exit, trap: def.trap, boss: def.boss,
     });
+    if (i === 0) this.say('intro');
+    else if (def.type === 'boss') this.say(`boss${def.chapter + 1}`);
+    else if (def.n === 1) this.say(`ch${def.chapter + 1}`);
     this.nextWave(playAt);
   }
 
@@ -284,6 +292,8 @@ export class StoryMatch extends Match {
       this.pending = [];
       for (const m of this.mobs.values()) if (m.alive) super.kill(m, null, t);
       this.cancelEnemySpells(t);
+      const def = this.room.def;
+      if (def.index < this.rooms.length - 1) this.say(`boss${def.chapter + 1}end`);
       return;
     }
     if (p.mob || this.over) return;

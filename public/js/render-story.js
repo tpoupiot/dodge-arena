@@ -2,6 +2,7 @@
 
 import { CHAPTERS } from '../../shared/story/rooms.js';
 import { BOSSES } from '../../shared/story/bosses.js';
+import { SCRIPT } from '../../shared/story/script.js';
 import { clamp } from '../../shared/util.js';
 import { FONT_D, FONT_B, C, rgba, mix } from './draw.js';
 import { formatTime } from './settings.js';
@@ -496,4 +497,52 @@ export function drawStoryOverlay(ctx, r, view, s, t) {
     ctx.fillText(text, cx, r.h - 150 * s);
   }
   ctx.restore();
+  drawNarration(ctx, r, st, s, t);
+}
+
+// Bandeau de narration : texte du récit ou réplique de boss, affiché quelques secondes sans bloquer la partie.
+function drawNarration(ctx, r, st, s, t) {
+  const line = st.say && SCRIPT[st.say.k];
+  if (!line) return;
+  const dur = clamp(2.5 + line.text.split(' ').length * 0.28, 3.5, 9);
+  const age = t - st.say.t;
+  if (age < 0 || age > dur) return;
+  const who = line.who ? BOSSES[line.who] : null;
+  ctx.save();
+  ctx.globalAlpha = clamp(Math.min(age / 0.3, (dur - age) / 0.5), 0, 1);
+  ctx.font = `500 ${19 * s}px ${FONT_B}`;
+  const boxW = Math.min(760 * s, r.w - 60);
+  const lines = wrap(ctx, who ? `« ${line.text} »` : line.text, boxW - 40 * s);
+  const lh = 27 * s, head = who ? 26 * s : 0;
+  const boxH = lines.length * lh + head + 24 * s;
+  const x = (r.w - boxW) / 2, y = r.h - 190 * s - boxH;
+  ctx.fillStyle = 'rgba(8,12,18,0.82)';
+  ctx.fillRect(x, y, boxW, boxH);
+  ctx.fillStyle = who ? who.color : C.mist;
+  ctx.fillRect(x, y, 3 * s, boxH);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  if (who) {
+    ctx.font = `700 ${15 * s}px ${FONT_B}`;
+    ctx.fillText(who.name, x + 20 * s, y + 22 * s);
+    ctx.font = `500 ${19 * s}px ${FONT_B}`;
+  }
+  ctx.fillStyle = C.chalk;
+  lines.forEach((l, i) => ctx.fillText(l, x + 20 * s, y + 12 * s + head + lh * (i + 0.5)));
+  ctx.restore();
+}
+
+// Coupe un texte en lignes qui tiennent dans maxW.
+function wrap(ctx, text, maxW) {
+  const out = [];
+  let cur = '';
+  for (const word of text.split(' ')) {
+    const next = cur ? `${cur} ${word}` : word;
+    if (cur && ctx.measureText(next).width > maxW) {
+      out.push(cur);
+      cur = word;
+    } else cur = next;
+  }
+  if (cur) out.push(cur);
+  return out;
 }

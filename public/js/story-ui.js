@@ -1,6 +1,7 @@
 // Interface du mode histoire : record, cartes du coffre, résultats de la run.
 
 import { ABILITIES, RARITIES, BUILD_SLOTS, scaled, describe } from '../../shared/abilities.js';
+import { SCRIPT } from '../../shared/story/script.js';
 import { CHAPTERS } from '../../shared/story/rooms.js';
 import { settings, saveSettings, keyLabel, formatTime } from './settings.js';
 
@@ -80,6 +81,7 @@ export function storyResultLine(ev) {
 export function fillStoryResults(ev, players, you, iconCanvas) {
   $('#res-title').textContent = ev.win ? 'Victoire' : 'Défaite';
   $('#res-sub').textContent = storyResultLine(ev);
+  $('#res-story').textContent = SCRIPT[ev.win ? 'win' : 'lose'].text;
   const kit = $('#res-kit');
   kit.textContent = '';
   const mine = ev.kits[you];

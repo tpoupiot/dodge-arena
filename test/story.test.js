@@ -808,3 +808,39 @@ test('Archonte du Vide : téléportation, prison, aiguilles, grappin, météores
   assert.ok(hero.hp < hero.maxHp);
   assert.ok(m.mobs.size <= 10);
 });
+
+// ---------------------------------------------------------------- narration
+
+import { SCRIPT } from '../shared/story/script.js';
+
+test('les 13 textes de l\'histoire', () => {
+  assert.deepEqual(Object.keys(SCRIPT), [
+    'intro', 'boss1', 'boss1p3', 'boss1end', 'ch2', 'boss2', 'boss2p3', 'boss2end', 'ch3', 'boss3', 'boss3p3', 'win', 'lose',
+  ]);
+  for (const k in SCRIPT) {
+    assert.ok(SCRIPT[k].text.length > 10, k);
+    assert.ok(SCRIPT[k].who === '' || BOSSES[SCRIPT[k].who], k);
+  }
+  assert.equal(SCRIPT.intro.text, 'Sous l\'Arène dort celui qui l\'a bâtie. Cette nuit, il s\'est éveillé et a pris toute ta magie. Il ne te reste qu\'un sort. Les autres sont en bas. Descends.');
+  assert.deepEqual(SCRIPT.boss2, { who: 'forgeronne', text: 'Tes sorts font de très bons lingots.' });
+  assert.equal(SCRIPT.win.text, 'L\'Archonte se dissipe. La magie qu\'il retenait remonte d\'un coup vers l\'Arène, et retombe en pluie de sorts. Là-haut, il va falloir apprendre à esquiver.');
+  assert.equal(SCRIPT.lose.text, 'Le Vide garde tes sorts. L\'Arène attendra un autre champion.');
+});
+
+test('narration : les textes arrivent aux moments prévus', () => {
+  const m = solo(3);
+  const says = () => m.events.filter((e) => e.e === 'say').map((e) => e.k);
+  const boss = () => [...m.mobs.values()].find((u) => u.boss && u.alive);
+  assert.deepEqual(says(), ['intro']);
+  while (m.room.def.index < 4) nextRoom(m);
+  assert.deepEqual(says(), ['intro', 'boss1'], 'aucun texte dans les salles ordinaires');
+  stepUntil(m, () => boss());
+  boss().hp = boss().maxHp * 0.3;
+  stepUntil(m, () => says().includes('boss1p3'), 60 * 5);
+  m.kill(boss(), null, m.time);
+  assert.deepEqual(says(), ['intro', 'boss1', 'boss1p3', 'boss1end']);
+  nextRoom(m);
+  assert.equal(says().at(-1), 'ch2');
+  while (!m.over) nextRoom(m);
+  assert.deepEqual(says(), ['intro', 'boss1', 'boss1p3', 'boss1end', 'ch2', 'boss2', 'boss2end', 'ch3', 'boss3']);
+});
