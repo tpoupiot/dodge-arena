@@ -112,10 +112,10 @@ export const ABILITIES = {
 		slot: "W",
 		name: "Bouclier",
 		kind: "buff",
-		shield: 35,
+		shield: 25,
 		shieldDur: 3,
 		cd: 13,
-		desc: "Bouclier qui absorbe 35 dégâts pendant 3 s.",
+		desc: "Bouclier qui absorbe 20 dégâts pendant 3 s.",
 	},
 	// ---------------------------------------------------------------- E
 	bond: {
@@ -235,7 +235,7 @@ export const ABILITIES = {
 for (const id in ABILITIES) ABILITIES[id].id = id
 
 // Auto-attaque : clic droit sur un ennemi (projectile à tête chercheuse, comme les attaques à distance de LoL).
-export const AUTO = { range: 300, windup: 0.22, cd: 1.0, speed: 1700, dmg: 6 }
+export const AUTO = { range: 200, windup: 0.22, cd: 1.0, speed: 1700, dmg: 6 }
 
 export const BUILD_SLOTS = ["Q", "W", "E", "R", "D", "F"]
 export const DEFAULT_BUILD = {
