@@ -9,7 +9,7 @@ import { Online } from './net.js';
 import {
   settings, saveSettings, resetBinds, ACTIONS, keyLabel, loadKeyboardLayout, formatTime,
 } from './settings.js';
-import { ABILITIES, ENV_SPELLS, spellName, abilityOf, poolFor, sanitizeBuild, BUILD_SLOTS, AUTO } from '../../shared/abilities.js';
+import { ABILITIES, ENV_SPELLS, spellName, abilityOf, poolFor, sanitizeBuild, BUILD_SLOTS, AUTO, describe } from '../../shared/abilities.js';
 import { ENV_COLOR, MODES, PLAYER_RADIUS } from '../../shared/constants.js';
 import { linePos } from '../../shared/sim.js';
 import { BOT_LEVELS } from '../../shared/bot.js';
@@ -757,7 +757,7 @@ function renderBuildModal() {
     const desc = document.createElement('p');
     desc.className = 'build-desc';
     const cur = ABILITIES[settings.build[slot]];
-    desc.textContent = `${cur.desc} Recharge ${String(cur.cd).replace('.', ',')} s.`;
+    desc.textContent = `${describe(cur)} Recharge ${String(cur.cd).replace('.', ',')} s.`;
     right.append(opts, desc);
     row.append(key, right);
     root.append(row);
@@ -906,7 +906,7 @@ function openHelp() {
   kit.textContent = '';
   for (const slot of ['Q', 'W', 'E', 'R', 'D', 'F']) {
     const ab = abilityOf({ build: settings.build }, slot);
-    row(kit, [keyLabel(settings.binds[slot])], `${ab.desc} Recharge ${String(ab.cd).replace('.', ',')} s.`, ab.name);
+    row(kit, [keyLabel(settings.binds[slot])], `${describe(ab)} Recharge ${String(ab.cd).replace('.', ',')} s.`, ab.name);
   }
   {
     row(kit, ['Clic droit'], `Sur un ennemi : le poursuit et l'attaque à ${AUTO.range} unités, ${AUTO.dmg} dégâts par coup, une attaque par seconde.`, 'Auto-attaque');
@@ -999,7 +999,7 @@ function handleEvents(evs) {
       case 'buff': {
         const p = playerById(view, ev.id);
         if (p) fx.ring(p.x, p.y, '#5eead4', 20, 84, 0.4, 5);
-        if (p && ev.ab === 'soin') fx.number(p.x, p.y - 20, `+${ABILITIES.soin.heal}`, '#5ee08f');
+        if (p && ev.heal) fx.number(p.x, p.y - 20, `+${ev.heal}`, '#5ee08f');
         sfx.play('buff', 0.7);
         break;
       }

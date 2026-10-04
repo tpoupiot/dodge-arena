@@ -67,7 +67,7 @@ export class Match {
       onCast: (p, ab, x, y, t) => this.onCast(p, ab, x, y, t),
       onBlink: (p, fx, fy, t) => this.emit({ e: 'flash', id: p.id, fx: round2(fx), fy: round2(fy), x: round2(p.x), y: round2(p.y), t }),
       onDash: (p, t) => this.emit({ e: 'dash', id: p.id, t }),
-      onBuff: (p, ab, t) => this.emit({ e: 'buff', id: p.id, ab: ab.id, t }),
+      onBuff: (p, ab, t) => this.emit({ e: 'buff', id: p.id, ab: ab.id, heal: ab.heal || 0, t }),
     };
     this.world = {
       get: (id) => this.players.get(id),

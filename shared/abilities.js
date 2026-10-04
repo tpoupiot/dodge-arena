@@ -15,7 +15,7 @@ export const ABILITIES = {
 		range: 1100,
 		dmg: 18,
 		cd: 1.6,
-		desc: "Projectile rapide et fin, 18 dégâts.",
+		desc: "Projectile rapide et fin, {dmg} dégâts.",
 	},
 	lien: {
 		slot: "Q",
@@ -29,7 +29,7 @@ export const ABILITIES = {
 		dmg: 12,
 		root: 1.4,
 		cd: 9,
-		desc: "Orbe lente qui enracine 1,4 s, 12 dégâts.",
+		desc: "Orbe lente qui enracine 1,4 s, {dmg} dégâts.",
 	},
 	grappin: {
 		slot: "Q",
@@ -43,7 +43,7 @@ export const ABILITIES = {
 		dmg: 10,
 		pull: 380,
 		cd: 11,
-		desc: "Crochet qui attire la cible vers toi, 10 dégâts.",
+		desc: "Crochet qui attire la cible vers toi, {dmg} dégâts.",
 	},
 	orbe: {
 		slot: "Q",
@@ -58,7 +58,7 @@ export const ABILITIES = {
 		pierce: true,
 		dmg: 12,
 		cd: 6,
-		desc: "Part puis revient en traversant tout, 12 dégâts par passage.",
+		desc: "Part puis revient en traversant tout, {dmg} dégâts par passage.",
 	},
 	javelot: {
 		slot: "Q",
@@ -73,7 +73,7 @@ export const ABILITIES = {
 		dmgMax: 28,
 		dmgMaxAt: 600, // distance à partir de laquelle les dégâts sont au maximum
 		cd: 3.5,
-		desc: "Projectile fin : de 8 à 28 dégâts selon la distance, maximum dès 600 unités.",
+		desc: "Projectile fin : de {dmg} à {dmgMax} dégâts selon la distance, maximum dès {dmgMaxAt} unités.",
 	},
 	// ---------------------------------------------------------------- W
 	eruption: {
@@ -89,7 +89,7 @@ export const ABILITIES = {
 		slow: 0.35,
 		slowDur: 1.5,
 		cd: 7,
-		desc: "Zone qui explose après 0,7 s et ralentit de 35 %, 22 dégâts.",
+		desc: "Zone qui explose après 0,7 s et ralentit de 35 %, {dmg} dégâts.",
 	},
 	salve: {
 		slot: "W",
@@ -105,7 +105,7 @@ export const ABILITIES = {
 		radius: 85,
 		dmg: 13,
 		cd: 9,
-		desc: "Quatre explosions en ligne vers le curseur, 13 dégâts chacune.",
+		desc: "Quatre explosions en ligne vers le curseur, {dmg} dégâts chacune.",
 	},
 	cage: {
 		slot: "W",
@@ -130,7 +130,7 @@ export const ABILITIES = {
 		shield: 20,
 		shieldDur: 3,
 		cd: 13,
-		desc: "Bouclier qui absorbe 20 dégâts pendant 3 s.",
+		desc: "Bouclier qui absorbe {shield} dégâts pendant 3 s.",
 	},
 	flux: {
 		slot: "W",
@@ -145,7 +145,7 @@ export const ABILITIES = {
 		mark: 4,
 		markDmg: 20,
 		cd: 8,
-		desc: "Marque la cible 4 s : ton prochain sort ou ta prochaine auto-attaque sur elle inflige +20 dégâts.",
+		desc: "Marque la cible 4 s : ton prochain sort ou ta prochaine auto-attaque sur elle inflige +{markDmg} dégâts.",
 	},
 	// ---------------------------------------------------------------- E
 	bond: {
@@ -195,7 +195,7 @@ export const ABILITIES = {
 		dmg: 25,
 		stun: 1.5,
 		cd: 22,
-		desc: "Grand projectile qui traverse l'arène et étourdit 1,5 s, 25 dégâts.",
+		desc: "Grand projectile qui traverse l'arène et étourdit 1,5 s, {dmg} dégâts.",
 	},
 	rayon: {
 		slot: "R",
@@ -209,7 +209,7 @@ export const ABILITIES = {
 		halfWidth: 65,
 		dmg: 35,
 		cd: 30,
-		desc: "Laser annoncé qui frappe toute la ligne après 0,9 s, 35 dégâts.",
+		desc: "Laser annoncé qui frappe toute la ligne après 0,9 s, {dmg} dégâts.",
 	},
 	meteore: {
 		slot: "R",
@@ -222,7 +222,7 @@ export const ABILITIES = {
 		delay: 1.1,
 		dmg: 40,
 		cd: 28,
-		desc: "Énorme zone qui s'écrase après 1,1 s, 40 dégâts.",
+		desc: "Énorme zone qui s'écrase après 1,1 s, {dmg} dégâts.",
 	},
 	barrage: {
 		slot: "R",
@@ -236,7 +236,7 @@ export const ABILITIES = {
 		pierce: true,
 		dmg: 30,
 		cd: 32,
-		desc: "Onde très large et lente qui traverse l'arène et tous les joueurs, 30 dégâts.",
+		desc: "Onde très large et lente qui traverse l'arène et tous les joueurs, {dmg} dégâts.",
 	},
 	// ---------------------------------------------------------------- sorts d'invocateur (D / F)
 	flash: {
@@ -264,7 +264,7 @@ export const ABILITIES = {
 		speed: 1.3,
 		speedDur: 1,
 		cd: 30,
-		desc: "Rend 20 PV et donne +30 % de vitesse 1 s.",
+		desc: "Rend {heal} PV et donne +30 % de vitesse 1 s.",
 	},
 	purge: {
 		slot: "S",
@@ -281,10 +281,41 @@ export const ABILITIES = {
 		shield: 45,
 		shieldDur: 2.5,
 		cd: 30,
-		desc: "Bouclier qui absorbe 45 dégâts pendant 2,5 s.",
+		desc: "Bouclier qui absorbe {shield} dégâts pendant 2,5 s.",
 	},
 }
 for (const id in ABILITIES) ABILITIES[id].id = id
+
+// Raretés du mode histoire : pow multiplie dégâts, soins et boucliers, cd multiplie la recharge.
+export const RARITIES = [
+	{ id: "commun", name: "Commun", color: "#cbd5e1", pow: 1, cd: 1 },
+	{ id: "rare", name: "Rare", color: "#60a5fa", pow: 1.25, cd: 0.9 },
+	{ id: "epique", name: "Épique", color: "#c084fc", pow: 1.5, cd: 0.8 },
+	{ id: "legendaire", name: "Légendaire", color: "#fbbf24", pow: 2, cd: 0.65 },
+]
+const POWER_FIELDS = ["dmg", "dmgMax", "markDmg", "shield", "heal"]
+const scaledCache = new Map()
+
+// Sort avec les chiffres de sa rareté. Niveau 0 : le sort d'origine. Le niveau est borné aux raretés connues.
+export function scaled(id, level) {
+	const base = ABILITIES[id]
+	const lvl = Math.max(0, Math.min(RARITIES.length - 1, Math.floor(level) || 0))
+	if (!base || !lvl) return base
+	const key = id + ":" + lvl
+	let ab = scaledCache.get(key)
+	if (!ab) {
+		const r = RARITIES[lvl]
+		ab = { ...base, rarity: lvl, cd: Math.round(base.cd * r.cd * 10) / 10 }
+		for (const f of POWER_FIELDS) if (base[f]) ab[f] = Math.round(base[f] * r.pow)
+		scaledCache.set(key, ab)
+	}
+	return ab
+}
+
+// Description d'un sort avec ses chiffres réels (un sort amélioré affiche ses valeurs de rareté).
+export function describe(ab) {
+	return ab.desc.replace(/\{(\w+)\}/g, (_, k) => String(ab[k]))
+}
 
 // Auto-attaque : clic droit sur un ennemi (projectile à tête chercheuse, comme les attaques à distance de LoL).
 export const AUTO = { range: 200, windup: 0.22, cd: 1.0, speed: 1700, dmg: 6 }
@@ -328,8 +359,10 @@ export function randomBuild(rng = Math.random) {
 	return b
 }
 
+// Sort placé sur une touche, avec la rareté du kit. Touche vide (mode histoire) : undefined.
 export function abilityOf(p, slot) {
-	return ABILITIES[(p.build && p.build[slot]) || DEFAULT_BUILD[slot]]
+	const id = p.build && slot in p.build ? p.build[slot] : DEFAULT_BUILD[slot]
+	return id ? scaled(id, p.rar ? p.rar[slot] : 0) : undefined
 }
 
 // Sorts lancés par l'arène (mode survie et pression en versus).

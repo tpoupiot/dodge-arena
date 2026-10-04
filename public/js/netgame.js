@@ -81,7 +81,7 @@ export class NetGame {
     this.localHooks = {
       onBlink: (p, fx, fy, t) => this.localFx.push({ e: 'flash', id: p.id, fx, fy, x: p.x, y: p.y, t, local: true }),
       onDash: (p, t) => this.localFx.push({ e: 'dash', id: p.id, t, local: true }),
-      onBuff: (p, ab, t) => this.localFx.push({ e: 'buff', id: p.id, ab: ab.id, t, local: true }),
+      onBuff: (p, ab, t) => this.localFx.push({ e: 'buff', id: p.id, ab: ab.id, heal: ab.heal || 0, t, local: true }),
       onCast: (p, ab, x, y, t) => this.localFx.push({ e: 'cast', id: p.id, slot: ab.slot, x, y, t, local: true }),
     };
   }
