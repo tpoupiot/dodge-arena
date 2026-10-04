@@ -69,7 +69,7 @@ Chapitres :
 
 ### Vagues
 
-Chaque ennemi a un coût. Une vague dépense un budget de `base + 1,5 × (n − 1)`, où `n` est le numéro de la salle dans le chapitre (1 à 4) et `base` vaut 5, 8 et 11 pour les chapitres 1, 2 et 3. Les ennemis sont tirés parmi ceux du chapitre jusqu'à épuisement du budget, avec au plus 10 ennemis vivants à la fois.
+Chaque ennemi a un coût. Une vague dépense un budget de `base + 1,5 × (n − 1)`, où `n` est le numéro de la salle dans le chapitre (1 à 4) et `base` vaut 5, 8 et 9 pour les chapitres 1, 2 et 3. Les ennemis sont tirés parmi ceux du chapitre jusqu'à épuisement du budget, avec au plus 10 ennemis vivants à la fois.
 
 À partir du chapitre 2, les salles 3 et 4 ont une chance sur deux de contenir un ennemi d'élite, un seul par salle.
 
@@ -100,7 +100,7 @@ Valeurs de départ, au chapitre 1. Elles seront ajustées à l'équilibrage (sec
 | Bélier | 60 | 225 | 36 | 4 | S'approche à 600 unités, annonce un couloir de 650 unités pendant 0,75 s puis le traverse en 0,3 s : 16 dégâts. Recharge 4,5 s. |
 | Sentinelle | 55 | 0 | 34 | 4 | Immobile. Tire un éventail de 3 projectiles écartés de 18° (préparation 0,7 s, vitesse 1100) : 9 dégâts chacun. Recharge 3 s. |
 
-Multiplicateurs par chapitre : PV ×1 / ×1,5 / ×2,1, dégâts ×1 / ×1,2 / ×1,45.
+Multiplicateurs par chapitre : PV ×1 / ×1,5 / ×1,7, dégâts ×1 / ×1,2 / ×1,45.
 
 **Élite** : PV ×2,5, rayon ×1,25, recharge d'attaque ×0,75, durée des contrôles subis divisée par deux, insensible aux attractions. Coût ×2,5. La sentinelle d'élite tire 5 projectiles.
 

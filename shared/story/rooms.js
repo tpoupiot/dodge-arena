@@ -19,7 +19,7 @@ export const DECORS = ['cercles', 'dalles', 'runes'];
 export const CHAPTERS = [
   { id: 'catacombes', name: 'Les Catacombes', boss: 'gardien', mobs: ['rodeur', 'tireur', 'bombe'], budget: 5, traps: ['fleches'], trapRooms: 1 },
   { id: 'forge', name: 'La Forge', boss: 'forgeronne', mobs: ['rodeur', 'tireur', 'bombe', 'pyro', 'belier'], budget: 8, traps: ['fleches', 'eruptions'], trapRooms: 2 },
-  { id: 'sanctuaire', name: 'Le Sanctuaire du Vide', boss: 'archonte', mobs: ['rodeur', 'tireur', 'bombe', 'pyro', 'belier', 'sentinelle'], budget: 11, traps: ['fleches', 'eruptions', 'lasers'], trapRooms: 2 },
+  { id: 'sanctuaire', name: 'Le Sanctuaire du Vide', boss: 'archonte', mobs: ['rodeur', 'tireur', 'bombe', 'pyro', 'belier', 'sentinelle'], budget: 9, traps: ['fleches', 'eruptions', 'lasers'], trapRooms: 2 },
 ];
 
 // Pièges : préréglages d'EnvSpawner limités à un sort de l'arène, à faible cadence.

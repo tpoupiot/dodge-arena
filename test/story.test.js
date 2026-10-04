@@ -109,7 +109,7 @@ test('définition d\'un ennemi : chapitre, élite et nombre de joueurs', () => {
     { team: base.team, mob: base.mob, maxHp: base.maxHp, spd: base.spd, r: base.r, cc: base.cc, dmg: base.dmg, elite: base.elite, name: base.name },
     { team: MOB_TEAM, mob: 'rodeur', maxHp: 34, spd: 255, r: 28, cc: 1, dmg: 10, elite: false, name: 'Rôdeur' },
   );
-  assert.equal(mobDef('m2', 'rodeur', { chapter: 2 }).maxHp, 71);
+  assert.equal(mobDef('m2', 'rodeur', { chapter: 2 }).maxHp, 58);
   assert.equal(mobDef('m2', 'tireur', { chapter: 2 }).dmg, 13);
   const elite = mobDef('m3', 'belier', { chapter: 1, elite: true });
   assert.equal(elite.maxHp, 225);

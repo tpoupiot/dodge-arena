@@ -15,7 +15,7 @@ export const MOBS = {
   sentinelle: { name: 'Sentinelle', color: '#e879f9', hp: 55, spd: 0, r: 34, cost: 4, dmg: 9, cd: 3 },
 };
 
-export const CHAPTER_HP = [1, 1.5, 2.1];
+export const CHAPTER_HP = [1, 1.5, 1.7];
 export const CHAPTER_DMG = [1, 1.2, 1.45];
 export const ELITE = { hp: 2.5, r: 1.25, cd: 0.75, cc: 0.5, cost: 2.5 };
 export const COOP_HP = 0.7;   // PV en plus par joueur supplémentaire
