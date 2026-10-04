@@ -233,6 +233,7 @@ function initMenu() {
   $('#play-survival').addEventListener('click', startSurvival);
   $('#play-bots').addEventListener('click', startBots);
   $('#play-story').addEventListener('click', startStory);
+  $('#create-story').addEventListener('click', () => goOnline(() => online.create('story')));
   $('#story-best').textContent = storyBestLine();
   $('#quick-1v1').addEventListener('click', () => goOnline(() => online.queue('1v1')));
   $('#quick-1v1v1').addEventListener('click', () => goOnline(() => online.queue('1v1v1')));
@@ -398,7 +399,8 @@ function renderLobby(room) {
   $('#room-code').textContent = room.code;
   const me = online.id;
   const isHost = room.host === me;
-  const cap = MODES[room.settings.mode];
+  const story = room.settings.mode === 'story';
+  const cap = story ? 3 : MODES[room.settings.mode];
   const ul = $('#slots');
   ul.textContent = '';
   for (let i = 0; i < cap; i++) {
@@ -447,7 +449,7 @@ function renderLobby(room) {
       n.className = 'slot-name empty';
       n.textContent = 'Place libre';
       name.append(n);
-      if (isHost) {
+      if (isHost && !story) {
         const sel = document.createElement('select');
         sel.setAttribute('aria-label', 'Niveau de l\'IA');
         for (const [v, l] of Object.entries(BOT_LEVELS)) {
@@ -463,12 +465,16 @@ function renderLobby(room) {
         add.addEventListener('click', () => online.addBot(sel.value));
         side.append(sel, add);
       } else {
-        side.append('En attente');
+        side.append(story ? 'Facultatif' : 'En attente');
       }
     }
     li.append(sw, name, side);
     ul.append(li);
   }
+  // Salon histoire : ni réglages de manches, ni build.
+  $('#room-settings').classList.toggle('hidden', story);
+  $('#story-note').hidden = !story;
+  $('#lobby-build').classList.toggle('hidden', story);
 
   for (const seg of $$('.seg[data-room]')) {
     const v = String(room.settings[seg.dataset.room]);
@@ -723,14 +729,24 @@ function showVersusResults(ev, players) {
 
 function showStoryResults(ev, players) {
   fillStoryResults(ev, players, sessionType === 'online' ? online.id : 'you', iconCanvas);
-  $('#res-again').textContent = 'Rejouer';
-  $('#res-menu').textContent = 'Menu';
-  $('#res-hint').textContent = '';
+  if (sessionType === 'online') {
+    $('#res-menu').textContent = 'Quitter le salon';
+    updateRematchHint();
+  } else {
+    $('#res-again').textContent = 'Rejouer';
+    $('#res-menu').textContent = 'Menu';
+    $('#res-hint').textContent = '';
+  }
   showOverlay('results');
 }
 
 function updateRematchHint() {
   if (sessionType !== 'online' || !lastRoom) return;
+  if (lastRoom.settings.mode === 'story') {
+    $('#res-hint').textContent = 'Une nouvelle run démarre quand tous les joueurs du salon sont prêts.';
+    $('#res-again').textContent = 'Rejouer';
+    return;
+  }
   const others = lastRoom.players.filter((p) => p.id !== online.id && !p.bot);
   const ready = others.filter((p) => p.ready).map((p) => p.name);
   const cap = MODES[lastRoom.settings.mode];
@@ -750,7 +766,7 @@ function initResults() {
     else if (sessionType === 'bots') startBots();
     else if (sessionType === 'story') startStory();
     else if (sessionType === 'online') {
-      const full = lastRoom && lastRoom.players.length >= MODES[lastRoom.settings.mode];
+      const full = lastRoom && (lastRoom.settings.mode === 'story' || lastRoom.players.length >= MODES[lastRoom.settings.mode]);
       if (full) online.ready(true);
       endSession();
       showScreen('lobby');
