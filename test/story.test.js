@@ -672,3 +672,75 @@ test('run complète : un pilote scripté va de la première salle à la victoire
   assert.ok(['W', 'E', 'R', 'D', 'F'].every((s) => h.build[s]), 'le kit est complet en fin de run');
   assert.ok(m.stats.a.kills > 30);
 });
+
+// ---------------------------------------------------------------- boss
+
+// Un joueur immortel et immobile face à un boss, pour observer ses attaques.
+function bossFight(key) {
+  const m = solo(1);
+  stepUntil(m, () => m.mobs.size > 0);
+  for (const u of m.mobs.values()) u.alive = false;
+  const hero = m.players.get('a');
+  hero.maxHp = 100000; hero.hp = 100000;
+  hero.x = 300; hero.y = 400; hero.tx = 300; hero.ty = 400; hero.mv = false;
+  const boss = m.addMob({ boss: key, x: 900, y: 400 }, m.time);
+  const defs = new Set();
+  // Avance de `sec` secondes en notant les sorts lancés par le boss.
+  const watch = (sec) => {
+    const until = m.time + sec;
+    stepUntil(m, () => {
+      for (const s of m.spells.values()) if (s.owner === boss.id) defs.add(s.def);
+      return m.time >= until;
+    }, 60 * (sec + 1));
+  };
+  return { m, hero, boss, brain: m.brains.get(boss.id), defs, watch };
+}
+
+// Taille des salves d'une attaque : nombre de sorts annoncés au même instant.
+function volleys(m, def) {
+  const by = new Map();
+  for (const e of m.events) if (e.e === 'sp' && e.s.def === def) by.set(e.s.t0, (by.get(e.s.t0) || 0) + 1);
+  return [...by.values()];
+}
+
+test('Gardien de pierre : enchaîne ses attaques, change de phase, ignore les contrôles', () => {
+  const { m, hero, boss, brain, defs, watch } = bossFight('gardien');
+  assert.ok(m.events.some((e) => e.e === 'boss' && e.id === boss.id && e.key === 'gardien' && e.phase === 1));
+  watch(20);
+  assert.ok(defs.has('b_onde') && defs.has('b_poing') && defs.has('b_replique'), [...defs].join());
+  assert.ok(!defs.has('b_roche') && !defs.has('b_charge'), 'attaques réservées aux phases suivantes');
+  assert.ok(volleys(m, 'b_onde').length > 0);
+  const t = m.time;
+  m.hit({ id: 99, dmg: 10, stun: 2, root: 2, pull: 300, ox: 0, oy: 0, owner: 'a', team: 'P', def: 'q', kind: 'line' }, boss, t, boss.x, boss.y);
+  assert.ok(!(boss.stunUntil > t) && !(boss.rootUntil > t), 'insensible aux contrôles');
+  // Phase 2 : éboulement et invocation de rôdeurs.
+  boss.hp = boss.maxHp * 0.6;
+  watch(25);
+  assert.equal(brain.phase, 2);
+  assert.ok(m.events.some((e) => e.e === 'boss' && e.phase === 2));
+  assert.ok(defs.has('b_roche'));
+  assert.ok(m.events.filter((e) => e.e === 'spawn' && e.u.mob === 'rodeur').length >= 2);
+  // Phase 3 : charge à travers la salle.
+  boss.hp = boss.maxHp * 0.3;
+  watch(25);
+  assert.equal(brain.phase, 3);
+  assert.ok(defs.has('b_charge'));
+  assert.ok(hero.hp < hero.maxHp, 'un joueur immobile est touché');
+  assert.ok(m.mobs.size <= 10);
+});
+
+test('mort d\'un boss : invocations, annonces et sorts disparaissent, plus rien ne part ensuite', () => {
+  const { m, boss, brain } = bossFight('gardien');
+  boss.hp = boss.maxHp * 0.6;
+  stepUntil(m, () => [...m.mobs.values()].some((u) => u.mob === 'rodeur'), 60 * 30);
+  stepUntil(m, () => brain.queue.length > 0, 60 * 60);
+  assert.ok(brain.queue.length > 0, 'une attaque programmée est en cours');
+  m.kill(boss, null, m.time);
+  assert.ok([...m.mobs.values()].every((u) => !u.alive), 'les invocations meurent avec lui');
+  assert.equal([...m.spells.values()].filter((s) => s.team === 'M').length, 0);
+  assert.equal(m.pending.length, 0);
+  const until = m.time + 3;
+  stepUntil(m, () => m.time >= until, 60 * 4);
+  assert.equal([...m.spells.values()].filter((s) => s.team === 'M').length, 0, 'aucune attaque programmée ne part après sa mort');
+  assert.equal(m.room.cleared, true);
+});

@@ -7,7 +7,7 @@ import { EnvSpawner } from '../spawner.js';
 import { round2 } from '../util.js';
 import { generateRun, TRAPS, doorZone, entryPoints, ROOMS_PER_CHAPTER, SPAWN_WARN } from './rooms.js';
 import { MOBS, ELITE, MOB_TEAM, mobDef, MobBrain } from './mobs.js';
-import { BOSSES, bossDef } from './bosses.js';
+import { BOSSES, bossDef, BossBrain } from './bosses.js';
 import { heroDef, drawOffer, applyCard, SKIP_HEAL } from './loot.js';
 
 // Décompte à l'entrée d'une salle (secondes).
@@ -146,7 +146,7 @@ export class StoryMatch extends Match {
     u.x = s.x; u.y = s.y; u.tx = s.x; u.ty = s.y;
     this.mobs.set(id, u);
     this.units.push(u);
-    if (!s.boss) this.brains.set(id, new MobBrain(this, u, def, t));
+    this.brains.set(id, s.boss ? new BossBrain(this, u, def, t) : new MobBrain(this, u, def, t));
     this.emit({ e: 'spawn', u: def, x: u.x, y: u.y, t });
     return u;
   }
@@ -279,6 +279,13 @@ export class StoryMatch extends Match {
 
   kill(p, s, t) {
     super.kill(p, s, t);
+    if (p.boss) {
+      // Le boss emporte ses invocations, les apparitions annoncées et tous les sorts ennemis.
+      this.pending = [];
+      for (const m of this.mobs.values()) if (m.alive) super.kill(m, null, t);
+      this.cancelEnemySpells(t);
+      return;
+    }
     if (p.mob || this.over) return;
     if (!this.heroes().some((h) => h.alive)) this.finishStory(false, t);
   }
