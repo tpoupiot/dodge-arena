@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dodge Arena</title>
+  <meta name="description" content="Jeu d'esquive de sorts avec les contrôles de LoL, en solo, contre l'IA ou en ligne en 1v1 et 1v1v1.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/big-shoulders-display-latin-900-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/barlow-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="in-menu">
+  <canvas id="game" aria-label="Arène de jeu"></canvas>
+  <div id="scrim" aria-hidden="true"></div>
+
+  <!-- Menu principal -->
+  <main id="menu" class="screen">
+    <header class="brand">
+      <h1 class="logo">Dodge<br>Arena</h1>
+      <p class="tagline">Esquive les sorts avec les contrôles de LoL&nbsp;: clic droit pour bouger, Flash sur D. En solo, contre l'IA ou en ligne à deux ou trois.</p>
+    </header>
+
+    <label class="field" for="name">
+      <span class="field-label">Pseudo</span>
+      <input id="name" maxlength="16" autocomplete="nickname" spellcheck="false">
+    </label>
+
+    <p class="touch-note" id="touch-note" hidden>Ce jeu se joue au clavier et à la souris.</p>
+
+    <div class="modes" id="modes">
+      <section class="mode open" data-mode="survival">
+        <button class="mode-head" aria-expanded="true" aria-controls="mode-survival">
+          <span class="mode-title">Survie</span>
+          <span class="mode-desc">Les sorts de l'arène pleuvent de plus en plus vite. Tiens le plus longtemps possible.</span>
+        </button>
+        <div class="mode-body" id="mode-survival">
+          <div class="seg" data-setting="survivalDifficulty" role="radiogroup" aria-label="Difficulté">
+            <button data-v="facile">Facile</button>
+            <button data-v="normal">Normale</button>
+            <button data-v="difficile">Difficile</button>
+            <button data-v="hardcore">Un seul coup</button>
+          </div>
+          <p class="hint" id="best-line"></p>
+          <button class="primary" id="play-survival">Jouer</button>
+        </div>
+      </section>
+
+      <section class="mode" data-mode="bots">
+        <button class="mode-head" aria-expanded="false" aria-controls="mode-bots">
+          <span class="mode-title">Contre l'IA</span>
+          <span class="mode-desc">Un duel hors ligne en 1v1 ou en 1v1v1 pour t'entraîner à toucher et à esquiver.</span>
+        </button>
+        <div class="mode-body" id="mode-bots">
+          <div class="opt">
+            <span class="opt-label">Format</span>
+            <div class="seg" data-setting="vsMode" role="radiogroup" aria-label="Format">
+              <button data-v="1v1">1v1</button>
+              <button data-v="1v1v1">1v1v1</button>
+            </div>
+          </div>
+          <div class="opt">
+            <span class="opt-label">Niveau de l'IA</span>
+            <div class="seg" data-setting="vsBot" role="radiogroup" aria-label="Niveau de l'IA">
+              <button data-v="facile">Facile</button>
+              <button data-v="normal">Normale</button>
+              <button data-v="difficile">Difficile</button>
+            </div>
+          </div>
+          <div class="opt">
+            <span class="opt-label">Manches gagnantes</span>
+            <div class="seg" data-setting="vsRounds" data-type="number" role="radiogroup" aria-label="Manches gagnantes">
+              <button data-v="1">1</button>
+              <button data-v="2">2</button>
+              <button data-v="3">3</button>
+            </div>
+          </div>
+          <div class="opt">
+            <span class="opt-label">Sorts de l'arène</span>
+            <div class="seg" data-setting="vsEnv" role="radiogroup" aria-label="Sorts de l'arène">
+              <button data-v="off">Aucun</button>
+              <button data-v="leger">Léger</button>
+              <button data-v="normal">Normal</button>
+              <button data-v="chaos">Chaos</button>
+            </div>
+          </div>
+          <button class="primary" id="play-bots">Lancer le duel</button>
+        </div>
+      </section>
+
+      <section class="mode" data-mode="online">
+        <button class="mode-head" aria-expanded="false" aria-controls="mode-online">
+          <span class="mode-title">En ligne</span>
+          <span class="mode-desc">Joue contre tes amis avec un code de salon, ou contre d'autres joueurs en partie rapide.</span>
+        </button>
+        <div class="mode-body" id="mode-online">
+          <div class="button-row">
+            <button class="primary" id="quick-1v1">Partie rapide 1v1</button>
+            <button class="primary" id="quick-1v1v1">Partie rapide 1v1v1</button>
+          </div>
+          <div class="button-row">
+            <button class="secondary" id="create-1v1">Créer un salon 1v1</button>
+            <button class="secondary" id="create-1v1v1">Créer un salon 1v1v1</button>
+          </div>
+          <form class="join" id="join-form" autocomplete="off">
+            <label class="sr-only" for="join-code">Code du salon</label>
+            <input id="join-code" maxlength="4" placeholder="Code du salon" spellcheck="false" autocapitalize="characters">
+            <button class="secondary" type="submit">Rejoindre</button>
+          </form>
+          <p class="status" id="online-status" role="status"></p>
+        </div>
+      </section>
+    </div>
+
+    <footer class="menu-foot">
+      <button class="link" id="open-settings">Paramètres</button>
+      <button class="link" id="open-help">Commandes</button>
+    </footer>
+  </main>
+
+  <!-- File d'attente -->
+  <section id="queue" class="screen hidden" aria-live="polite">
+    <h2 class="screen-title" id="queue-title">Recherche d'adversaires</h2>
+    <p class="queue-count" id="queue-count"></p>
+    <p class="hint">La partie démarre dès que la file est complète. Tu peux aussi créer un salon et envoyer le lien à un ami.</p>
+    <button class="secondary" id="queue-cancel">Annuler la recherche</button>
+  </section>
+
+  <!-- Salon -->
+  <section id="lobby" class="screen hidden">
+    <p class="field-label">Code du salon</p>
+    <div class="room-code" id="room-code"></div>
+    <button class="secondary small" id="copy-link">Copier le lien d'invitation</button>
+
+    <ul class="slots" id="slots"></ul>
+
+    <div class="room-settings" id="room-settings">
+      <div class="opt">
+        <span class="opt-label">Format</span>
+        <div class="seg" data-room="mode" role="radiogroup" aria-label="Format">
+          <button data-v="1v1">1v1</button>
+          <button data-v="1v1v1">1v1v1</button>
+        </div>
+      </div>
+      <div class="opt">
+        <span class="opt-label">Manches gagnantes</span>
+        <div class="seg" data-room="roundsToWin" data-type="number" role="radiogroup" aria-label="Manches gagnantes">
+          <button data-v="1">1</button>
+          <button data-v="2">2</button>
+          <button data-v="3">3</button>
+          <button data-v="5">5</button>
+        </div>
+      </div>
+      <div class="opt">
+        <span class="opt-label">Sorts de l'arène</span>
+        <div class="seg" data-room="env" role="radiogroup" aria-label="Sorts de l'arène">
+          <button data-v="off">Aucun</button>
+          <button data-v="leger">Léger</button>
+          <button data-v="normal">Normal</button>
+          <button data-v="chaos">Chaos</button>
+        </div>
+      </div>
+      <p class="hint" id="host-note"></p>
+    </div>
+
+    <div class="button-row">
+      <button class="primary" id="ready-btn">Je suis prêt</button>
+      <button class="secondary" id="leave-btn">Quitter le salon</button>
+    </div>
+
+    <div class="chat-box">
+      <div class="chat-log" id="lobby-chat-log" aria-live="polite"></div>
+      <form id="lobby-chat-form" autocomplete="off">
+        <label class="sr-only" for="lobby-chat-input">Message</label>
+        <input id="lobby-chat-input" maxlength="120" placeholder="Écrire un message">
+      </form>
+    </div>
+  </section>
+
+  <!-- Chat pendant la partie -->
+  <div id="game-chat" class="hidden">
+    <div class="chat-log" id="game-chat-log" aria-live="polite"></div>
+    <form id="game-chat-form" autocomplete="off" class="hidden">
+      <label class="sr-only" for="game-chat-input">Message</label>
+      <input id="game-chat-input" maxlength="120" placeholder="Entrée pour envoyer, Échap pour fermer">
+    </form>
+  </div>
+
+  <!-- Résultats -->
+  <section id="results" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="res-title">
+    <div class="panel">
+      <h2 class="big-title" id="res-title"></h2>
+      <p class="res-sub" id="res-sub"></p>
+      <table class="res-table" id="res-table"></table>
+      <p class="hint" id="res-hint"></p>
+      <div class="button-row">
+        <button class="primary" id="res-again"></button>
+        <button class="secondary" id="res-menu"></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pause / menu en jeu -->
+  <section id="pause" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+    <div class="panel narrow">
+      <h2 class="big-title" id="pause-title">Pause</h2>
+      <p class="hint" id="pause-note"></p>
+      <div class="stack">
+        <button class="primary" id="pause-resume">Reprendre</button>
+        <button class="secondary" id="pause-settings">Paramètres</button>
+        <button class="secondary" id="pause-quit">Abandonner la partie</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Paramètres -->
+  <section id="settings" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="panel scroll">
+      <h2 class="screen-title" id="settings-title">Paramètres</h2>
+
+      <h3 class="section-title">Touches</h3>
+      <p class="hint">Les touches suivent leur position sur le clavier, comme dans LoL&nbsp;: sur un clavier AZERTY, les sorts sont sur A, Z, E et R.</p>
+      <table class="binds" id="binds"></table>
+      <button class="link" id="reset-binds">Rétablir les touches par défaut</button>
+
+      <h3 class="section-title">Lancement des sorts</h3>
+      <div class="choices" id="cast-modes" role="radiogroup" aria-label="Lancement des sorts">
+        <label class="choice">
+          <input type="radio" name="castMode" value="quick">
+          <span><strong>Rapide</strong> Le sort part vers le curseur dès l'appui sur la touche.</span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="castMode" value="indicator">
+          <span><strong>Rapide avec indicateur</strong> Maintiens la touche pour voir la portée, relâche pour lancer.</span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="castMode" value="normal">
+          <span><strong>Normal</strong> Appuie sur la touche puis fais un clic gauche. Clic droit pour annuler.</span>
+        </label>
+      </div>
+
+      <h3 class="section-title">Son et affichage</h3>
+      <label class="range">
+        <span>Volume</span>
+        <input type="range" id="volume" min="0" max="1" step="0.05">
+      </label>
+      <label class="check">
+        <input type="checkbox" id="show-perf">
+        <span>Afficher le ping et les images par seconde</span>
+      </label>
+
+      <div class="button-row">
+        <button class="primary" id="close-settings">Fermer</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Aide -->
+  <section id="help" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="panel scroll">
+      <h2 class="screen-title" id="help-title">Commandes</h2>
+      <table class="keys" id="help-keys"></table>
+      <h3 class="section-title">Ton kit</h3>
+      <table class="keys" id="help-kit"></table>
+      <p class="hint">En survie, seuls Bond, Flash et Fantôme sont disponibles.</p>
+      <h3 class="section-title">Sorts de l'arène</h3>
+      <table class="keys" id="help-env"></table>
+      <div class="button-row">
+        <button class="primary" id="close-help">Fermer</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden" role="alert"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

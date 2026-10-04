@@ -1,0 +1,766 @@
+/* Dodge Arena — interface sobre (ardoise et craie) : la couleur est réservée au jeu. */
+
+@font-face {
+  font-family: "Big Shoulders Display";
+  src: url("fonts/big-shoulders-display-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Big Shoulders Display";
+  src: url("fonts/big-shoulders-display-latin-900-normal.woff2") format("woff2");
+  font-weight: 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/barlow-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/barlow-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/barlow-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Barlow";
+  src: url("fonts/barlow-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  --night: #10161f;
+  --stone: #1b2430;
+  --stone-hi: #263241;
+  --line: #33404f;
+  --line-hi: #4a5869;
+  --chalk: #e9eef3;
+  --mist: #93a1b0;
+  --ok: #5ee08f;
+  --bad: #fb7185;
+  --font-d: "Big Shoulders Display", "Barlow", "Arial Narrow", sans-serif;
+  --font-b: "Barlow", system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--night);
+  color: var(--chalk);
+  font: 500 1rem/1.5 var(--font-b);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+:focus-visible {
+  outline: 2px solid var(--chalk);
+  outline-offset: 3px;
+}
+
+/* ------------------------------------------------------------ fond : arène vivante */
+
+#game {
+  position: fixed;
+  inset: 0;
+  display: block;
+  z-index: 0;
+}
+
+body.in-game #game {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28'><path d='M3 3 L24 12 L14.5 14.5 L12 24 Z' fill='%23e9eef3' stroke='%2310161f' stroke-width='2' stroke-linejoin='round'/></svg>") 3 3, crosshair;
+}
+
+#scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(90deg, rgba(16, 22, 31, 0.95) 0, rgba(16, 22, 31, 0.86) 440px, rgba(16, 22, 31, 0.3) 72%, rgba(16, 22, 31, 0.12) 100%);
+}
+
+body.in-game #scrim {
+  display: none;
+}
+
+/* ------------------------------------------------------------ écrans latéraux */
+
+.screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 2;
+  width: min(480px, 100vw);
+  padding: clamp(24px, 4vw, 56px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.logo {
+  margin: 0;
+  font: 900 clamp(4.75rem, 8.5vw, 7.5rem) / 0.84 var(--font-d);
+  text-transform: uppercase;
+  letter-spacing: 0.005em;
+}
+
+.tagline {
+  margin: 14px 0 0;
+  max-width: 36ch;
+  color: var(--mist);
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field-label,
+.opt-label {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--mist);
+  letter-spacing: 0.02em;
+}
+
+input[type="text"],
+input:not([type]),
+#join-code {
+  width: 100%;
+  background: rgba(233, 238, 243, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 11px 12px;
+  font-weight: 600;
+  outline: none;
+}
+
+input:not([type]):focus,
+input[type="text"]:focus {
+  border-color: var(--chalk);
+}
+
+.touch-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--bad);
+  color: var(--chalk);
+  background: rgba(251, 113, 133, 0.08);
+}
+
+/* Liste des modes : un accordéon, pas des cartes */
+.modes {
+  border-bottom: 1px solid var(--line);
+}
+
+.mode {
+  position: relative;
+  border-top: 1px solid var(--line);
+}
+
+.mode-head {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 16px 0 16px 18px;
+  background: none;
+  border: 0;
+  text-align: left;
+}
+
+.mode-head::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18px;
+  width: 3px;
+  height: 30px;
+  background: transparent;
+}
+
+.mode.open .mode-head::before {
+  background: var(--chalk);
+}
+
+.mode-title {
+  font: 700 1.9375rem/1 var(--font-d);
+  color: var(--mist);
+}
+
+.mode.open .mode-title,
+.mode-head:hover .mode-title {
+  color: var(--chalk);
+}
+
+.mode-desc {
+  font-size: 0.9375rem;
+  color: var(--mist);
+  max-width: 40ch;
+}
+
+.mode:not(.open) .mode-body {
+  display: none;
+}
+
+.mode-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 0 0 22px 18px;
+}
+
+.opt {
+  display: grid;
+  gap: 6px;
+}
+
+/* Contrôle segmenté */
+.seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+}
+
+.seg button {
+  padding: 7px 14px;
+  margin-left: -1px;
+  background: transparent;
+  border: 1px solid var(--line-hi);
+  color: var(--mist);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.seg button:first-child {
+  margin-left: 0;
+}
+
+.seg button:hover {
+  color: var(--chalk);
+}
+
+.seg button[aria-checked="true"] {
+  position: relative;
+  background: var(--chalk);
+  border-color: var(--chalk);
+  color: var(--night);
+}
+
+.seg.locked {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+/* Boutons */
+.primary {
+  padding: 13px 22px;
+  background: var(--chalk);
+  color: var(--night);
+  border: 0;
+  border-radius: 2px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.primary:hover {
+  background: #ffffff;
+}
+
+.secondary {
+  padding: 12px 20px;
+  background: transparent;
+  color: var(--chalk);
+  border: 1px solid var(--line-hi);
+  border-radius: 2px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.secondary:hover {
+  border-color: var(--chalk);
+}
+
+.small {
+  padding: 8px 14px;
+  font-size: 0.875rem;
+}
+
+.primary:disabled,
+.secondary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.link {
+  padding: 4px 0;
+  background: none;
+  border: 0;
+  color: var(--mist);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(147, 161, 176, 0.45);
+}
+
+.link:hover {
+  color: var(--chalk);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.stack {
+  display: grid;
+  gap: 10px;
+}
+
+.join {
+  display: flex;
+  gap: 8px;
+}
+
+#join-code {
+  width: 10.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+#join-code::placeholder {
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.hint {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--mist);
+  font-size: 0.9375rem;
+}
+
+.status {
+  margin: 0;
+  min-height: 1.5em;
+  color: var(--mist);
+  font-size: 0.9375rem;
+}
+
+.status.error {
+  color: var(--bad);
+}
+
+.menu-foot {
+  display: flex;
+  gap: 22px;
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+/* ------------------------------------------------------------ file d'attente et salon */
+
+.screen-title {
+  margin: 0;
+  font: 900 3.0625rem/0.95 var(--font-d);
+}
+
+.queue-count {
+  margin: 0;
+  font: 700 1.9375rem/1.1 var(--font-d);
+}
+
+.room-code {
+  font: 900 6rem/0.9 var(--font-d);
+  letter-spacing: 0.14em;
+  margin-top: -14px;
+}
+
+#copy-link {
+  align-self: flex-start;
+  margin-top: -6px;
+}
+
+.slots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.slot {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 58px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+}
+
+.slot-name {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.slot-name.empty {
+  color: var(--mist);
+  font-weight: 500;
+}
+
+.slot-tag {
+  margin-left: 8px;
+  color: var(--mist);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.slot-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--mist);
+}
+
+.slot-side .ok {
+  color: var(--ok);
+}
+
+.slot-side select {
+  background: var(--night);
+  color: var(--chalk);
+  border: 1px solid var(--line-hi);
+  padding: 6px 8px;
+  font: 600 0.875rem var(--font-b);
+}
+
+.room-settings {
+  display: grid;
+  gap: 14px;
+}
+
+.chat-box {
+  border: 1px solid var(--line);
+  background: rgba(16, 22, 31, 0.6);
+}
+
+.chat-box .chat-log {
+  height: 132px;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+
+.chat-box input {
+  border: 0 !important;
+  border-top: 1px solid var(--line) !important;
+}
+
+.chat-log p {
+  margin: 0 0 3px;
+  font-size: 0.9375rem;
+  overflow-wrap: anywhere;
+}
+
+.chat-name {
+  font-weight: 700;
+}
+
+.chat-sys {
+  color: var(--mist);
+}
+
+/* Chat pendant la partie */
+#game-chat {
+  position: fixed;
+  left: 16px;
+  bottom: 150px;
+  z-index: 3;
+  width: min(380px, 42vw);
+  pointer-events: none;
+}
+
+#game-chat .chat-log p {
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+  transition: opacity 0.6s;
+}
+
+#game-chat .chat-log p.faded {
+  opacity: 0;
+}
+
+#game-chat.typing .chat-log p.faded {
+  opacity: 0.8;
+}
+
+#game-chat form {
+  pointer-events: auto;
+  margin-top: 6px;
+}
+
+#game-chat input {
+  background: rgba(16, 22, 31, 0.9);
+}
+
+/* ------------------------------------------------------------ fenêtres */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(10, 14, 20, 0.74);
+}
+
+.panel {
+  width: min(640px, 100%);
+  max-height: calc(100vh - 48px);
+  padding: 32px 36px;
+  background: var(--stone);
+  border: 1px solid var(--line);
+}
+
+.panel.narrow {
+  width: min(380px, 100%);
+}
+
+.panel.scroll {
+  overflow-y: auto;
+}
+
+.big-title {
+  margin: 0;
+  font: 900 4.75rem/0.9 var(--font-d);
+}
+
+.res-sub {
+  margin: 10px 0 0;
+  font-size: 1.125rem;
+  color: var(--chalk);
+}
+
+.res-table {
+  width: 100%;
+  margin: 22px 0 10px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.res-table:empty {
+  display: none;
+}
+
+.res-table th {
+  padding: 8px 6px;
+  text-align: left;
+  color: var(--mist);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+}
+
+.res-table td {
+  padding: 10px 6px;
+  border-bottom: 1px solid rgba(51, 64, 79, 0.6);
+}
+
+.res-table .num {
+  text-align: right;
+}
+
+.res-table .swatch {
+  display: inline-block;
+  margin-right: 8px;
+  vertical-align: -1px;
+}
+
+.panel .button-row {
+  margin-top: 22px;
+}
+
+.panel .hint {
+  margin-top: 6px;
+}
+
+.panel .stack {
+  margin-top: 22px;
+}
+
+.section-title {
+  margin: 28px 0 8px;
+  font: 700 1.5625rem/1.1 var(--font-d);
+}
+
+.binds,
+.keys {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+}
+
+.binds td,
+.keys td {
+  padding: 8px 12px 8px 0;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(51, 64, 79, 0.6);
+}
+
+.binds td:last-child {
+  text-align: right;
+}
+
+.key-btn {
+  min-width: 70px;
+  padding: 7px 12px;
+  background: var(--night);
+  border: 1px solid var(--line-hi);
+  border-radius: 2px;
+  font-weight: 700;
+}
+
+.key-btn.waiting {
+  border-color: var(--chalk);
+  color: var(--mist);
+}
+
+.keys .k {
+  width: 1%;
+  white-space: nowrap;
+}
+
+kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 2px 7px;
+  background: var(--night);
+  border: 1px solid var(--line-hi);
+  border-radius: 3px;
+  font: 700 0.875rem var(--font-b);
+  text-align: center;
+}
+
+.keys .desc {
+  color: var(--mist);
+}
+
+.keys strong {
+  color: var(--chalk);
+  font-weight: 600;
+}
+
+.choices {
+  display: grid;
+  gap: 12px;
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 10px;
+  color: var(--mist);
+  cursor: pointer;
+}
+
+.choice strong {
+  display: block;
+  color: var(--chalk);
+  font-weight: 600;
+}
+
+input[type="radio"],
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 3px 0 0;
+  accent-color: var(--chalk);
+}
+
+.range,
+.check {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 0;
+}
+
+input[type="range"] {
+  width: 220px;
+  accent-color: var(--chalk);
+}
+
+.toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  z-index: 10;
+  max-width: 90vw;
+  padding: 10px 18px;
+  transform: translateX(-50%);
+  background: var(--chalk);
+  color: var(--night);
+  font-weight: 600;
+}
+
+@media (max-width: 560px) {
+  #scrim {
+    background: rgba(16, 22, 31, 0.9);
+  }
+  .room-code {
+    font-size: 4.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

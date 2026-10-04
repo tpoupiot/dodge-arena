@@ -1,0 +1,19 @@
+{
+  "name": "dodge-arena",
+  "version": "1.0.0",
+  "description": "Jeu d'esquive de sorts façon MOBA (contrôles LoL) avec mode en ligne 1v1 / 1v1v1.",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "license": "MIT"
+}
