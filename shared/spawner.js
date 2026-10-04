@@ -3,7 +3,7 @@
 
 import { SUDDEN_DEATH_AT } from './constants.js';
 import { ENV_SPELLS } from './abilities.js';
-import { speedAt } from './sim.js';
+import { predictPos } from './sim.js';
 import { clamp, rayToRect, pickWeighted, gauss } from './util.js';
 
 // r0 / rMax : sorts par seconde au début / à terme, tau : vitesse de montée (s),
@@ -84,6 +84,7 @@ export class EnvSpawner {
     const e = this.elapsed(t);
     const out = [];
     for (const key in ENV_SPELLS) {
+      if (this.p.only && !this.p.only.includes(key)) continue;   // piège du mode histoire : un seul type de sort
       const d = ENV_SPELLS[key];
       if (e >= d.unlock * this.p.unlock) out.push({ w: d.weight, v: key });
     }
@@ -92,12 +93,7 @@ export class EnvSpawner {
 
   // Position estimée de la cible dans dt secondes (k = part d'anticipation, 0 = position actuelle).
   predict(p, t, dt, k) {
-    if (!p.mv || p.dash || k <= 0) return { x: p.x, y: p.y };
-    const dx = p.tx - p.x, dy = p.ty - p.y;
-    const d = Math.hypot(dx, dy);
-    if (d < 1) return { x: p.x, y: p.y };
-    const travel = Math.min(d, speedAt(p, t) * dt * k);
-    return { x: p.x + (dx / d) * travel, y: p.y + (dy / d) * travel };
+    return predictPos(p, t, dt, k);
   }
 
   spawn(t) {

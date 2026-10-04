@@ -152,3 +152,118 @@ test('l\'événement de buff porte le soin réellement rendu', () => {
   assert.equal(m.players.get('a').hp, 70);
   assert.equal(m.events.find((e) => e.e === 'buff').heal, 30);
 });
+
+// ---------------------------------------------------------------- équipes et points d'extension
+
+import { EnvSpawner } from '../shared/spawner.js';
+
+function stepUntil(m, cond, max = 60 * 30) {
+  for (let i = 0; i < max && !cond(); i++) m.step();
+}
+
+// Partie à trois joueurs ; defs complète la définition de chacun (équipe, rayon, cc).
+function trio(defs = {}) {
+  const players = ['a', 'b', 'c'].map((id, i) => ({ id, name: id, color: PLAYER_COLORS[i], ...(defs[id] || {}) }));
+  const m = new Match({ kind: 'versus', players, settings: { roundsToWin: 3, env: 'off' }, seed: 1 });
+  stepUntil(m, () => m.phase === 'playing');
+  return m;
+}
+
+test('un projectile traverse les alliés et touche les ennemis', () => {
+  const m = trio({ a: { team: 'P' }, b: { team: 'P' } });
+  const a = m.players.get('a'), b = m.players.get('b'), c = m.players.get('c');
+  a.x = 300; a.y = 500; b.x = 600; b.y = 500; c.x = 900; c.y = 500;
+  m.queueInput('a', 1, m.time, { k: 'cast', slot: 'Q', x: 900, y: 500 });
+  stepUntil(m, () => c.hp < 100, 120);
+  assert.equal(b.hp, 100, 'l\'allié n\'est pas touché');
+  assert.equal(c.hp, 82);
+});
+
+test('une zone ne touche pas l\'équipe de son lanceur', () => {
+  const m = trio({ a: { team: 'P' }, b: { team: 'P' } });
+  const a = m.players.get('a'), b = m.players.get('b'), c = m.players.get('c');
+  a.x = 300; a.y = 500; b.x = 700; b.y = 500; c.x = 760; c.y = 500;
+  m.queueInput('a', 1, m.time, { k: 'cast', slot: 'W', x: 730, y: 500 });
+  stepUntil(m, () => c.hp < 100, 120);
+  assert.equal(b.hp, 100);
+  assert.equal(c.hp, 78);
+});
+
+test('les collisions utilisent le rayon de la cible', () => {
+  const m = trio({ c: { r: 90 } });
+  const a = m.players.get('a'), b = m.players.get('b'), c = m.players.get('c');
+  a.x = 300; a.y = 500; b.x = 700; b.y = 600; c.x = 1000; c.y = 600;
+  m.queueInput('a', 1, m.time, { k: 'cast', slot: 'Q', x: 1300, y: 500 });
+  stepUntil(m, () => c.hp < 100, 120);
+  assert.equal(b.hp, 100, 'cible normale hors d\'atteinte : 100 > 30 + 36');
+  assert.equal(c.hp, 82, 'grosse cible touchée : 100 < 30 + 90');
+});
+
+test('cc réduit ou annule les contrôles', () => {
+  const m = trio({ b: { cc: 0.5 }, c: { cc: 0 } });
+  const b = m.players.get('b'), c = m.players.get('c');
+  const t = m.time;
+  m.hit({ id: 90, dmg: 5, stun: 2, root: 2, owner: 'a', team: 'a', def: 'q', kind: 'line' }, b, t, b.x, b.y);
+  assert.ok(Math.abs(b.stunUntil - (t + 1)) < 1e-9);
+  assert.ok(Math.abs(b.rootUntil - (t + 1)) < 1e-9);
+  const cx = c.x;
+  m.hit({ id: 91, dmg: 5, stun: 2, root: 2, pull: 300, ox: 0, oy: 0, slow: 0.3, slowDur: 1, owner: 'a', team: 'a', def: 'q', kind: 'line' }, c, t, c.x, c.y);
+  assert.equal(c.hp, 95, 'les dégâts passent');
+  assert.ok(!(c.stunUntil > t) && !(c.rootUntil > t) && !c.dash, 'aucun contrôle dur');
+  assert.ok(c.slowUntil > t, 'le ralentissement s\'applique');
+  assert.equal(c.x, cx);
+  // Une attraction demande cc = 1.
+  b.stunUntil = 0;
+  m.hit({ id: 92, dmg: 0, pull: 300, ox: 0, oy: 0, owner: 'a', team: 'a', def: 'q', kind: 'line' }, b, t, b.x, b.y);
+  assert.equal(b.dash, null);
+});
+
+test('un sort en préparation est annulé tant que son champ cu n\'est pas dépassé', () => {
+  const m = trio();
+  const a = m.players.get('a');
+  const t = m.time;
+  a.castUntil = t + 1;
+  const s = m.addSpell({ kind: 'circle', def: 'test', owner: 'a', target: null, t0: t, tl: t, td: t + 1, cu: t + 1, x: 500, y: 500, r: 80, dmg: 10, fx: '' });
+  assert.equal(s.team, 'a', 'le sort porte l\'équipe de son lanceur');
+  assert.equal(m.addSpell({ kind: 'circle', def: 'test', owner: null, target: null, t0: t, tl: t, td: t + 9, x: 0, y: 0, r: 1, dmg: 0, fx: '' }).team, null);
+  m.hit({ id: 93, dmg: 1, stun: 1, owner: 'b', team: 'b', def: 'q', kind: 'line' }, a, t + 0.5, a.x, a.y);
+  assert.equal(m.spells.has(s.id), false);
+  const end = m.events.find((e) => e.e === 'end' && e.id === s.id);
+  assert.ok(Number.isFinite(end.x) && Number.isFinite(end.y));
+});
+
+test('une sous-classe branche sa logique sur setup, tick et command', () => {
+  const log = [];
+  class Custom extends Match {
+    setup(o) { this.custom = o.custom; log.push('setup'); }
+    startRound() { log.push('round:' + this.custom); super.startRound(); }
+    tick() { if (!this.ticked) { this.ticked = true; log.push('tick'); } }
+    command(p, cmd, t) {
+      if (cmd.k === 'ping') { log.push('ping'); return true; }
+      return super.command(p, cmd, t);
+    }
+  }
+  const players = [{ id: 'a', name: 'A', color: '#fff' }, { id: 'b', name: 'B', color: '#fff' }];
+  const m = new Custom({ kind: 'versus', custom: 7, players, settings: { env: 'off' }, seed: 1 });
+  assert.deepEqual(log, ['setup', 'round:7']);
+  assert.equal(m.unit('a'), m.players.get('a'));
+  assert.equal(m.unit('zz'), undefined);
+  assert.deepEqual(m.units.map((u) => u.id), ['a', 'b']);
+  assert.equal(m.mobs.size, 0);
+  stepUntil(m, () => m.phase === 'playing');
+  m.queueInput('a', 1, m.time, { k: 'ping' });
+  m.step();
+  assert.equal(m.botCommand('a', { k: 'ping' }), true);
+  assert.equal(m.botCommand('a', { k: 'move', x: 100, y: 100 }), true);
+  assert.deepEqual(log, ['setup', 'round:7', 'tick', 'ping', 'ping']);
+});
+
+test('un préréglage de piège limite les sorts de l\'arène à sa liste', () => {
+  const m = trio();
+  const sp = new EnvSpawner(m, { only: ['rayon'], r0: 5, rMax: 5, tau: 30, speed: 0, unlock: 0, first: 0 });
+  for (let i = 0; i < 30; i++) {
+    m.step();
+    sp.update(m.time);
+  }
+  assert.deepEqual([...new Set([...m.spells.values()].map((s) => s.def))], ['rayon']);
+});

@@ -91,6 +91,16 @@ export function speedAt(p, t) {
   return s;
 }
 
+// Position estimée d'une unité dans dt secondes (k = part d'anticipation, 0 = position actuelle).
+export function predictPos(p, t, dt, k) {
+  if (!p.mv || p.dash || k <= 0) return { x: p.x, y: p.y };
+  const dx = p.tx - p.x, dy = p.ty - p.y;
+  const d = Math.hypot(dx, dy);
+  if (d < 1) return { x: p.x, y: p.y };
+  const travel = Math.min(d, speedAt(p, t) * dt * k);
+  return { x: p.x + (dx / d) * travel, y: p.y + (dy / d) * travel };
+}
+
 // Peut-on se déplacer pendant le tick qui se termine à t ?
 export function canWalk(p, t, rules) {
   return p.alive && !p.dash && t > rules.playAt && t >= p.stunUntil && t >= p.rootUntil && t >= p.castUntil && !(t < p.stasisUntil);

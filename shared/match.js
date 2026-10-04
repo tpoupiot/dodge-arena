@@ -2,7 +2,7 @@
 // Le serveur en fait tourner une par salon ; le navigateur en fait tourner une pour le solo.
 
 import {
-  DT, COUNTDOWN, SURVIVAL_COUNTDOWN, ROUND_END_DELAY, PLAYER_RADIUS as R,
+  DT, COUNTDOWN, SURVIVAL_COUNTDOWN, ROUND_END_DELAY,
   SLOTS, SURVIVAL_SLOTS, MAX_INPUT_LEAD, arenaSize,
 } from './constants.js';
 import { PULL_DURATION, AUTO, randomBuild } from './abilities.js';
@@ -17,7 +17,11 @@ import { mulberry32, segPointDist2, segParam, clamp, round2 } from './util.js';
 const DEFAULTS = {
   survival: { difficulty: 'normal' },
   versus: { roundsToWin: 2, env: 'normal' },
+  story: {},
 };
+
+// Un sort ne touche pas l'équipe de son lanceur. Sans équipe (sorts de l'arène), il touche tout le monde.
+const friendly = (s, p) => s.team != null && s.team === p.team;
 
 export class Match {
   // o = { kind: 'survival' | 'versus', players: [{ id, name, color, bot, botLevel }], settings, time, seed }
@@ -31,6 +35,8 @@ export class Match {
 
     this.players = new Map();
     this.order = [];
+    this.units = [];        // toutes les unités : joueurs, puis ennemis du mode histoire
+    this.mobs = new Map();  // ennemis du mode histoire
     this.inputs = new Map();
     this.lastInputT = new Map();
     this.scores = {};
@@ -39,6 +45,7 @@ export class Match {
       const p = createPlayer(def.bot && !def.build ? { ...def, build: randomBuild(this.rng) } : def, i);
       this.players.set(p.id, p);
       this.order.push(p.id);
+      this.units.push(p);
       this.inputs.set(p.id, []);
       this.lastInputT.set(p.id, -Infinity);
       this.scores[p.id] = 0;
@@ -70,11 +77,29 @@ export class Match {
       onBuff: (p, ab, t) => this.emit({ e: 'buff', id: p.id, ab: ab.id, heal: ab.heal || 0, t }),
     };
     this.world = {
-      get: (id) => this.players.get(id),
+      get: (id) => this.unit(id),
       onAttack: (p, tg, t) => this.onAttack(p, tg, t),
     };
 
+    this.setup(o);
     this.startRound();
+  }
+
+  // ------------------------------------------------------------ points d'extension (mode histoire)
+
+  // Appelé une fois, avant la première manche.
+  setup() {}
+
+  // Appelé à chaque pas de jeu, avant la mise à jour des sorts.
+  tick() {}
+
+  // Applique une commande de joueur ; une sous-classe peut ajouter les siennes.
+  command(p, cmd, t) {
+    return applyCommand(p, cmd, t, this.rules, this.hooks);
+  }
+
+  unit(id) {
+    return this.players.get(id) || this.mobs.get(id);
   }
 
   // ------------------------------------------------------------ API
@@ -106,7 +131,7 @@ export class Match {
 
   botCommand(id, cmd) {
     const p = this.players.get(id);
-    return p ? applyCommand(p, cmd, this.time, this.rules, this.hooks) : false;
+    return p ? this.command(p, cmd, this.time) : false;
   }
 
   removePlayer(id) {
@@ -146,16 +171,17 @@ export class Match {
       while (q.length && q[0].t <= t1) {
         const inp = q.shift();
         if (inp.seq > p.seq) p.seq = inp.seq;
-        applyCommand(p, inp.cmd, t1, rules, this.hooks);
+        this.command(p, inp.cmd, t1);
       }
     }
 
     if (this.phase === 'playing') for (const bot of this.bots.values()) bot.update(t1);
 
-    for (const id of this.order) stepPlayer(this.players.get(id), t0, t1, rules, this.world);
+    for (const u of this.units) stepPlayer(u, t0, t1, rules, this.world);
 
     if (this.phase === 'playing') {
       if (this.spawner) this.spawner.update(t1);
+      this.tick(t0, t1);
       this.updateSpells(t0, t1);
       this.checkEnd(t1);
     } else if (this.phase === 'roundEnd' && t1 >= this.phaseUntil) {
@@ -191,7 +217,9 @@ export class Match {
   // ------------------------------------------------------------ sorts
 
   addSpell(spec) {
-    const s = { ...spec, id: this.nextSpellId++, hit: new Set(), hitBack: new Set(), anyHit: false };
+    const owner = spec.owner ? this.unit(spec.owner) : null;
+    const team = spec.team !== undefined ? spec.team : owner ? owner.team : null;
+    const s = { ...spec, team, id: this.nextSpellId++, hit: new Set(), hitBack: new Set(), anyHit: false };
     this.spells.set(s.id, s);
     this.emit({ e: 'sp', s: packSpell(s) });
     return s;
@@ -271,24 +299,21 @@ export class Match {
       else if (s.kind === 'line') this.updateLine(s, t0, t1);
       else if (s.kind === 'circle') {
         if (t1 >= s.td) {
-          const rr = (s.r + R) ** 2;
-          for (const id of this.order) {
-            const p = this.players.get(id);
-            if (!p.alive || p.id === s.owner) continue;
-            if ((p.x - s.x) ** 2 + (p.y - s.y) ** 2 < rr) this.hit(s, p, t1, p.x, p.y);
+          for (const p of this.units) {
+            if (!p.alive || friendly(s, p)) continue;
+            if ((p.x - s.x) ** 2 + (p.y - s.y) ** 2 < (s.r + p.r) ** 2) this.hit(s, p, t1, p.x, p.y);
           }
           this.expireSpell(s);
         }
       } else {
         if (t1 >= s.ta) {
-          for (const id of this.order) {
-            const p = this.players.get(id);
-            if (!p.alive || p.id === s.owner || s.hit.has(p.id)) continue;
+          for (const p of this.units) {
+            if (!p.alive || friendly(s, p) || s.hit.has(p.id)) continue;
             let touched;
             if (s.kind === 'beam') {
-              touched = segPointDist2(s.ax, s.ay, s.bx, s.by, p.x, p.y) < (s.hw + R) ** 2;
+              touched = segPointDist2(s.ax, s.ay, s.bx, s.by, p.x, p.y) < (s.hw + p.r) ** 2;
             } else {
-              touched = Math.abs(Math.hypot(p.x - s.x, p.y - s.y) - s.r) < s.th / 2 + R;
+              touched = Math.abs(Math.hypot(p.x - s.x, p.y - s.y) - s.r) < s.th / 2 + p.r;
             }
             if (touched) {
               s.hit.add(p.id);
@@ -304,13 +329,13 @@ export class Match {
   // Auto-attaque : suit sa cible jusqu'à la toucher.
   updateHoming(s, t0, t1) {
     if (t1 <= s.tl) return;
-    const tg = this.players.get(s.tgt);
+    const tg = this.unit(s.tgt);
     if (!tg || !tg.alive) return this.endSpell(s, t1, s.px, s.py, 'cancel');
     const step = s.speed * (t1 - Math.max(t0, s.tl));
     const dx = tg.x - s.px, dy = tg.y - s.py;
     const d = Math.hypot(dx, dy);
-    if (d <= step + R * 0.5) {
-      this.hit(s, tg, t1, tg.x - (dx / (d || 1)) * R, tg.y - (dy / (d || 1)) * R);
+    if (d <= step + tg.r * 0.5) {
+      this.hit(s, tg, t1, tg.x - (dx / (d || 1)) * tg.r, tg.y - (dy / (d || 1)) * tg.r);
       return this.endSpell(s, t1, tg.x, tg.y, 'hit');
     }
     s.px += (dx / d) * step;
@@ -331,15 +356,13 @@ export class Match {
       } else {
         segs.push([ta, tb, 1]);
       }
-      const rr = (s.radius + R) ** 2;
       for (const [a, b, ph] of segs) {
         const pa = linePos(s, a), pb = linePos(s, b);
         const hitSet = ph === 2 ? s.hitBack : s.hit;
         let best = null, bestK = 2;
-        for (const id of this.order) {
-          const p = this.players.get(id);
-          if (!p.alive || p.id === s.owner || hitSet.has(p.id)) continue;
-          if (segPointDist2(pa.x, pa.y, pb.x, pb.y, p.x, p.y) >= rr) continue;
+        for (const p of this.units) {
+          if (!p.alive || friendly(s, p) || hitSet.has(p.id)) continue;
+          if (segPointDist2(pa.x, pa.y, pb.x, pb.y, p.x, p.y) >= (s.radius + p.r) ** 2) continue;
           const k = segParam(pa.x, pa.y, pb.x, pb.y, p.x, p.y);
           if (s.pierce) {
             hitSet.add(p.id);
@@ -410,17 +433,19 @@ export class Match {
         p.slowUntil = Math.max(p.slowUntil, t + s.slowDur);
         fx = 'slow';
       }
-      if (s.root) {
-        p.rootUntil = Math.max(p.rootUntil, t + s.root);
+      // cc : multiplicateur des contrôles subis (0,5 pour une élite, 0 pour un boss).
+      const cc = p.cc ?? 1;
+      if (s.root && cc > 0) {
+        p.rootUntil = Math.max(p.rootUntil, t + s.root * cc);
         fx = 'root';
       }
-      if (s.stun) {
-        p.stunUntil = Math.max(p.stunUntil, t + s.stun);
+      if (s.stun && cc > 0) {
+        p.stunUntil = Math.max(p.stunUntil, t + s.stun * cc);
         p.mv = false;
         this.interrupt(p, t);
         fx = 'stun';
       }
-      if (s.pull) {
+      if (s.pull && cc >= 1) {
         this.pull(p, s, t);
         fx = 'pull';
       }
@@ -432,12 +457,12 @@ export class Match {
   pull(p, s, t) {
     const dx = s.ox - p.x, dy = s.oy - p.y;
     const d = Math.hypot(dx, dy) || 1;
-    const pd = Math.min(s.pull, Math.max(0, d - R * 1.5));
+    const pd = Math.min(s.pull, Math.max(0, d - p.r * 1.5));
     const b = boundsAt(this.rules, t);
     p.dash = {
       k: 'pull', fx: p.x, fy: p.y,
-      tx: clamp(p.x + (dx / d) * pd, b.x0 + R, b.x1 - R),
-      ty: clamp(p.y + (dy / d) * pd, b.y0 + R, b.y1 - R),
+      tx: clamp(p.x + (dx / d) * pd, b.x0 + p.r, b.x1 - p.r),
+      ty: clamp(p.y + (dy / d) * pd, b.y0 + p.r, b.y1 - p.r),
       ts: t, te: t + PULL_DURATION,
     };
     p.stunUntil = Math.max(p.stunUntil, t + PULL_DURATION);
@@ -446,12 +471,13 @@ export class Match {
   }
 
   // Un contrôle dur pendant l'incantation annule le sort.
+  // cu (annulable jusqu'à) : pour les attaques d'ennemis dont la préparation dépasse le départ du sort.
   interrupt(p, t) {
     if (!(t < p.castUntil)) return;
     p.castUntil = t;
     for (const s of this.spells.values()) {
-      if (s.owner === p.id && t < (s.tl ?? s.t0)) {
-        this.endSpell(s, t, s.ox ?? s.x, s.oy ?? s.y, 'cancel');
+      if (s.owner === p.id && t < (s.cu ?? s.tl ?? s.t0)) {
+        this.endSpell(s, t, s.ox ?? s.x ?? s.ax, s.oy ?? s.y ?? s.ay, 'cancel');
       }
     }
   }
@@ -461,7 +487,7 @@ export class Match {
     p.alive = false;
     p.mv = false;
     p.dash = null;
-    this.stats[p.id].deaths++;
+    if (this.stats[p.id]) this.stats[p.id].deaths++;
     const by = s ? s.owner : null;
     if (by && by !== p.id && this.stats[by]) this.stats[by].kills++;
     this.emit({ e: 'die', id: p.id, by, def: s ? s.def : '', t, x: round2(p.x), y: round2(p.y) });
