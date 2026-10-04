@@ -4,17 +4,18 @@ import { Match } from '../../shared/match.js';
 import { DT, PLAYER_COLORS } from '../../shared/constants.js';
 import { extrapolate, spellEnd } from '../../shared/sim.js';
 import { botName } from '../../shared/bot.js';
+import { randomBuild } from '../../shared/abilities.js';
 
 export class LocalGame {
   // kind : 'survival' | 'versus' ; bots : nombre d'IA adverses ; demo : une IA joue seule (fond du menu)
-  constructor({ kind, name = 'Toi', settings = {}, bots = 0, botLevel = 'normal', demo = false, seed }) {
+  constructor({ kind, name = 'Toi', settings = {}, bots = 0, botLevel = 'normal', demo = false, seed, build }) {
     this.kind = kind;
     this.you = demo ? null : 'you';
     const players = [];
     if (demo) players.push({ id: 'demo', name: 'IA', color: PLAYER_COLORS[0], bot: true, botLevel: 'difficile' });
-    else players.push({ id: 'you', name, color: PLAYER_COLORS[0] });
+    else players.push({ id: 'you', name, color: PLAYER_COLORS[0], build });
     for (let i = 0; i < bots; i++) {
-      players.push({ id: 'b' + i, name: botName(i), color: PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length], bot: true, botLevel });
+      players.push({ id: 'b' + i, name: botName(i), color: PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length], bot: true, botLevel, build: randomBuild() });
     }
     this.match = new Match({ kind, players, settings, time: 0, seed });
     this.settings = this.match.settings;

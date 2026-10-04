@@ -25,7 +25,7 @@ export class Online {
     return this.clock.samples.length ? this.clock.rtt * 1000 : null;
   }
 
-  connect(name) {
+  connect(name, build) {
     if (this.connected) return Promise.resolve();
     if (this.connecting) return this.connecting;
     this.clock = new TimeSync(); // nouvelle connexion : on repart de mesures fraîches
@@ -42,7 +42,7 @@ export class Online {
       this.ws = ws;
       let welcomed = false;
       const timer = setTimeout(() => ws.close(), 7000);
-      ws.onopen = () => ws.send(JSON.stringify({ type: 'hello', name }));
+      ws.onopen = () => ws.send(JSON.stringify({ type: 'hello', name, build }));
       ws.onmessage = (ev) => {
         let m;
         try {
@@ -178,6 +178,10 @@ export class Online {
 
   removeBot(id) {
     this.send({ type: 'removeBot', id });
+  }
+
+  sendBuild(build) {
+    this.send({ type: 'build', build });
   }
 
   chat(text) {

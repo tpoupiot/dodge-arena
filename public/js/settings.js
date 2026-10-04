@@ -1,5 +1,7 @@
 // Réglages du joueur (touches, mode de lancement, volume, records), sauvegardés dans le navigateur.
 
+import { sanitizeBuild, DEFAULT_BUILD } from '../../shared/abilities.js';
+
 const KEY = 'dodge-arena-settings-v1';
 
 // Les touches sont stockées par position physique (event.code), comme LoL :
@@ -7,10 +9,10 @@ const KEY = 'dodge-arena-settings-v1';
 export const ACTIONS = [
   { id: 'Q', label: 'Sort Q' },
   { id: 'W', label: 'Sort W' },
-  { id: 'E', label: 'Sort E (Bond)' },
+  { id: 'E', label: 'Sort E' },
   { id: 'R', label: 'Sort R (ultime)' },
-  { id: 'D', label: 'Flash' },
-  { id: 'F', label: 'Fantôme' },
+  { id: 'D', label: 'Sort d\'invocateur D' },
+  { id: 'F', label: 'Sort d\'invocateur F' },
   { id: 'stop', label: 'Stop' },
 ];
 
@@ -25,6 +27,7 @@ const DEFAULTS = {
   vsBot: 'normal',
   vsRounds: 2,
   vsEnv: 'normal',
+  build: { ...DEFAULT_BUILD },
   best: { facile: 0, normal: 0, difficile: 0, hardcore: 0 },
 };
 
@@ -38,6 +41,7 @@ function load() {
       ...s,
       binds: { ...DEFAULTS.binds, ...(s.binds || {}) },
       best: { ...DEFAULTS.best, ...(s.best || {}) },
+      build: sanitizeBuild(s.build),
     };
   } catch {
     return structuredClone(DEFAULTS);

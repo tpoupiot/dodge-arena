@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DT, MOVE_SPEED, ARENA_W, ARENA_H, SUDDEN_DEATH_AT, SLOTS, PLAYER_COLORS } from '../shared/constants.js';
-import { ABILITIES } from '../shared/abilities.js';
+import { ABILITIES, AUTO, DEFAULT_BUILD, sanitizeBuild } from '../shared/abilities.js';
 import { createPlayer, stepPlayer, applyCommand, boundsAt } from '../shared/sim.js';
 import { Match } from '../shared/match.js';
 
@@ -34,9 +34,9 @@ test('le délai d\'incantation immobilise puis le déplacement reprend', () => {
   p.x = 400; p.y = 450;
   applyCommand(p, { k: 'move', x: 1200, y: 450 }, 1, rules);
   assert.ok(applyCommand(p, { k: 'cast', slot: 'Q', x: 400, y: 100 }, 1, rules));
-  run(p, 1, ABILITIES.Q.windup - DT);
+  run(p, 1, ABILITIES.trait.windup - DT);
   assert.equal(p.x, 400, 'immobile pendant l\'incantation');
-  run(p, 1 + ABILITIES.Q.windup, 0.5);
+  run(p, 1 + ABILITIES.trait.windup, 0.5);
   assert.ok(p.x > 500, 'reprend sa route');
   assert.equal(applyCommand(p, { k: 'cast', slot: 'Q', x: 0, y: 0 }, 1.5, rules), false, 'Q en recharge');
 });
@@ -91,7 +91,7 @@ test('un Q touche une cible immobile, inflige des dégâts et disparaît', () =>
   }, 120);
   assert.ok(hit, 'le sort touche');
   assert.equal(hit.tid, 'b');
-  assert.equal(b.hp, 100 - ABILITIES.Q.dmg);
+  assert.equal(b.hp, 100 - ABILITIES.trait.dmg);
   assert.equal(m.spells.size, 0);
   assert.equal(m.stats.a.hits, 1);
   assert.ok(a.hp === 100);
@@ -136,9 +136,58 @@ test('la survie se termine et donne un temps', () => {
   assert.ok(m.result.survived > 1);
 });
 
-test('en survie, seuls Bond, Flash et Fantôme sont utilisables', () => {
+test('en survie, seuls les sorts E, D et F sont utilisables', () => {
   const m = new Match({ kind: 'survival', players: [{ id: 'you', name: 'Toi', color: '#fff' }], settings: { difficulty: 'normal' }, seed: 3 });
   stepUntil(m, () => m.phase === 'playing');
   assert.equal(m.botCommand('you', { k: 'cast', slot: 'Q', x: 0, y: 0 }), false);
   assert.equal(m.botCommand('you', { k: 'cast', slot: 'D', x: 100, y: 100 }), true);
+});
+
+test('auto-attaque : clic droit sur un ennemi, poursuite puis projectile qui touche', () => {
+  const m = duel(5);
+  stepUntil(m, () => m.phase === 'playing');
+  const b = m.players.get('b');
+  m.queueInput('a', 1, m.time, { k: 'attack', id: 'b' });
+  let hit = null;
+  stepUntil(m, () => {
+    hit = m.events.find((e) => e.e === 'hit' && e.def === 'auto');
+    return !!hit;
+  }, 60 * 4);
+  assert.ok(hit, 'l\'auto-attaque finit par toucher');
+  assert.equal(b.hp, 100 - AUTO.dmg);
+  assert.ok(Math.hypot(m.players.get('a').x - b.x, m.players.get('a').y - b.y) <= AUTO.range + 40, 'a s\'est rapproché');
+});
+
+test('le build choisit les sorts : un Grappin sur Q attire la cible', () => {
+  const players = [
+    { id: 'a', name: 'A', color: PLAYER_COLORS[0], build: { ...DEFAULT_BUILD, Q: 'grappin' } },
+    { id: 'b', name: 'B', color: PLAYER_COLORS[1] },
+  ];
+  const m = new Match({ kind: 'versus', players, settings: { roundsToWin: 2, env: 'off' }, seed: 4 });
+  stepUntil(m, () => m.phase === 'playing');
+  const a = m.players.get('a'), b = m.players.get('b');
+  const before = Math.abs(b.x - a.x);
+  m.queueInput('a', 1, m.time, { k: 'cast', slot: 'Q', x: b.x, y: b.y });
+  stepUntil(m, () => m.events.some((e) => e.e === 'hit'), 120);
+  stepUntil(m, () => !b.dash, 60);
+  assert.ok(Math.abs(b.x - a.x) < before - 200, 'la cible a été attirée');
+});
+
+test('bouclier et voile anti-sort réduisent ou bloquent les dégâts', () => {
+  const m = duel(6);
+  stepUntil(m, () => m.phase === 'playing');
+  const b = m.players.get('b');
+  b.shield = 10; b.shieldUntil = m.time + 2;
+  m.hit({ id: 98, dmg: 18, owner: 'a', def: 'q', kind: 'line' }, b, m.time, b.x, b.y);
+  assert.equal(b.hp, 92);
+  b.spellShieldUntil = m.time + 1;
+  m.hit({ id: 97, dmg: 18, owner: 'a', def: 'q', kind: 'line' }, b, m.time, b.x, b.y);
+  assert.equal(b.hp, 92, 'sort bloqué');
+});
+
+test('un build invalide est corrigé', () => {
+  const b = sanitizeBuild({ Q: 'flash', W: 'nimporte', D: 'soin', F: 'soin' });
+  assert.equal(b.Q, DEFAULT_BUILD.Q);
+  assert.equal(b.W, DEFAULT_BUILD.W);
+  assert.notEqual(b.D, b.F);
 });

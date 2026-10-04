@@ -1,7 +1,7 @@
 // Rendu canvas : arène, sorts, joueurs, indicateurs de visée et interface de jeu (HUD).
 
 import { ARENA_W, ARENA_H, PLAYER_RADIUS as R, ENV_COLOR, MAX_HP, SUDDEN_DEATH_AT } from '../../shared/constants.js';
-import { ABILITIES } from '../../shared/abilities.js';
+import { abilityOf, AUTO } from '../../shared/abilities.js';
 import { boundsAt, linePos, lineEnd } from '../../shared/sim.js';
 import { mulberry32, clamp } from '../../shared/util.js';
 import { settings, keyLabel, formatTime } from './settings.js';
@@ -222,6 +222,7 @@ export class Renderer {
     if (view) {
       const t = view.t;
       const colors = new Map(view.players.map((p) => [p.id, p.color]));
+      this.pos = new Map(view.players.map((p) => [p.id, p]));
       const spells = [...view.spells];
       this.drawBounds(ctx, view, t);
       for (const s of spells) this.drawGroundSpell(ctx, s, t, colors.get(s.owner) || C.env);
@@ -407,6 +408,7 @@ export class Renderer {
   // ------------------------------------------------------------ projectiles et rayons actifs
 
   drawAirSpell(ctx, s, t, color) {
+    if (s.kind === 'homing') return this.drawAuto(ctx, s, t, color);
     if (s.kind === 'beam') return this.drawBeamActive(ctx, s, t, color);
     if (s.kind !== 'line') return;
     if (t < s.tl || t >= s.cut || s.hiddenAt != null) return;
@@ -415,11 +417,37 @@ export class Renderer {
     const p = linePos(s, t);
     const back = linePos(s, Math.max(s.tl, t - 0.09));
     const def = s.def;
-    if (def === 'grappin') return this.drawHook(ctx, s, p, color);
-    if (def === 'lien') return this.drawOrb(ctx, s, p, back, t, color);
-    if (def === 'boomerang') return this.drawBlade(ctx, s, p, t, color);
+    if (def === 'grappin' || def === 'grappinq') return this.drawHook(ctx, s, p, color);
+    if (def === 'lien' || def === 'lienq') return this.drawOrb(ctx, s, p, back, t, color);
+    if (def === 'boomerang' || def === 'orbe') return this.drawBlade(ctx, s, p, t, color);
     if (def === 'r' || def === 'fleche') return this.drawArrow(ctx, s, p, back, color);
     this.drawBolt(ctx, s, p, back, color);
+  }
+
+  // Auto-attaque : petit projectile qui file vers la position affichée de sa cible.
+  drawAuto(ctx, s, t, color) {
+    if (t < s.tl || t >= s.cut) return;
+    const tg = this.pos && this.pos.get(s.tgt);
+    if (!tg) return;
+    const dx = tg.x - s.ox, dy = tg.y - s.oy;
+    const len = Math.hypot(dx, dy) || 1;
+    const d = Math.min(len - R * 0.6, (t - s.tl) * s.speed);
+    if (d < 0) return;
+    const x = s.ox + (dx / len) * d, y = s.oy + (dy / len) * d;
+    ctx.save();
+    ctx.strokeStyle = rgba(color, 0.6);
+    ctx.lineWidth = 7;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - (dx / len) * 34, y - (dy / len) * 34);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    this.drawGlow(ctx, color, x, y, 26, 0.8);
   }
 
   drawBolt(ctx, s, p, back, color) {
@@ -585,6 +613,24 @@ export class Renderer {
       ctx.ellipse(p.x, p.y + 12, R * 1.05, R * 0.5, 0, 0, Math.PI * 2);
       ctx.fill();
 
+      // Cible de l'auto-attaque en cours : anneau rouge, et portée d'attaque autour de soi.
+      const me = view.players.find((q) => q.isYou);
+      if (me && me.st && me.st.atk === p.id && me.alive) {
+        ctx.strokeStyle = 'rgba(248,113,113,0.9)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 6]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, R + 12, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      if (p.isYou && p.st && p.st.atk) {
+        ctx.strokeStyle = 'rgba(248,113,113,0.18)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, AUTO.range + R, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       if (p.isYou) {
         ctx.strokeStyle = rgba(C.self, 0.55);
         ctx.lineWidth = 2.5;
@@ -626,8 +672,24 @@ export class Renderer {
 
   drawStatus(ctx, p, st, t) {
     // Incantation en cours : arc de progression.
-    if (t < st.castUntil && st.castSlot && ABILITIES[st.castSlot]) {
-      const w = ABILITIES[st.castSlot].windup;
+    if (st.shield > 0 && t < st.shieldUntil) {
+      ctx.strokeStyle = 'rgba(241,245,249,0.85)';
+      ctx.lineWidth = 3 + Math.min(5, st.shield / 8);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R + 7, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (t < st.spellShieldUntil) {
+      ctx.fillStyle = 'rgba(253,230,138,0.16)';
+      ctx.strokeStyle = 'rgba(253,230,138,0.8)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R + 14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    if (t < st.castUntil && st.castDur > 0) {
+      const w = st.castDur;
       const k = clamp(1 - (st.castUntil - t) / w, 0, 1);
       ctx.strokeStyle = rgba('#ffffff', 0.9);
       ctx.lineWidth = 4;
@@ -699,7 +761,7 @@ export class Renderer {
   drawAim(ctx, view, aim) {
     const me = view.players.find((p) => p.isYou);
     if (!me || !me.alive) return;
-    const ab = ABILITIES[aim.slot];
+    const ab = me.st ? abilityOf(me.st, aim.slot) : null;
     if (!ab) return;
     const dx = aim.x - me.x, dy = aim.y - me.y;
     const d = Math.hypot(dx, dy) || 1;
@@ -720,6 +782,44 @@ export class Renderer {
       ctx.lineTo(me.x - nx * w, me.y - ny * w);
       ctx.closePath();
       ctx.fill();
+      ctx.stroke();
+    } else if (ab.kind === 'beam') {
+      const nx = -uy, ny = ux, w = ab.halfWidth;
+      const ex = me.x + ux * ab.length, ey = me.y + uy * ab.length;
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(me.x + nx * w, me.y + ny * w);
+      ctx.lineTo(ex + nx * w, ey + ny * w);
+      ctx.lineTo(ex - nx * w, ey - ny * w);
+      ctx.lineTo(me.x - nx * w, me.y - ny * w);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (ab.kind === 'salvo') {
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 2;
+      for (let i = 0; i < ab.count; i++) {
+        const k = 150 + i * ab.spacing;
+        ctx.beginPath();
+        ctx.arc(me.x + ux * k, me.y + uy * k, ab.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else if (ab.kind === 'ring') {
+      const k = Math.min(d, ab.castRange);
+      ctx.strokeStyle = 'rgba(191,219,254,0.35)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(me.x, me.y, ab.castRange, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = ab.thickness;
+      ctx.globalAlpha = 0.45;
+      ctx.beginPath();
+      ctx.arc(me.x + ux * k, me.y + uy * k, ab.radius, 0, Math.PI * 2);
       ctx.stroke();
     } else if (ab.kind === 'circle') {
       const k = Math.min(d, ab.castRange);
@@ -810,7 +910,9 @@ export class Renderer {
     if (t < me.stunUntil) chips.push(['Étourdi', me.stunUntil - t, '#fde68a']);
     if (t < me.rootUntil) chips.push(['Enraciné', me.rootUntil - t, '#c084fc']);
     if (t < me.slowUntil) chips.push([`Ralenti ${Math.round(me.slowAmt * 100)} %`, me.slowUntil - t, '#93c5fd']);
-    if (t < me.ghostUntil) chips.push(['Fantôme', me.ghostUntil - t, '#5eead4']);
+    if (t < me.ghostUntil) chips.push([`Vitesse +${Math.round((me.boostMul - 1) * 100)} %`, me.ghostUntil - t, '#5eead4']);
+    if (me.shield > 0 && t < me.shieldUntil) chips.push([`Bouclier ${Math.ceil(me.shield)}`, me.shieldUntil - t, '#f1f5f9']);
+    if (t < me.spellShieldUntil) chips.push(['Anti-sort', me.spellShieldUntil - t, '#fde68a']);
     if (chips.length) {
       ctx.font = `600 ${13 * s}px ${FONT_B}`;
       const widths = chips.map((c) => ctx.measureText(`${c[0]} ${c[1].toFixed(1)}`).width + 18 * s);
@@ -831,7 +933,7 @@ export class Renderer {
     let x = x0;
     HUD_SLOTS.forEach((slot, i) => {
       if (i === 4) x += split - gap;
-      const ab = ABILITIES[slot];
+      const ab = abilityOf(me, slot);
       const ok = allowed.includes(slot);
       const ready = me.cds[slot] || 0;
       const remain = Math.max(0, ready - t);
@@ -851,7 +953,7 @@ export class Renderer {
     bg.addColorStop(1, mix(tint, '#0b1018', 0.85));
     ctx.fillStyle = bg;
     ctx.fillRect(x, y, size, size);
-    this.drawIcon(ctx, slot, x + size / 2, y + size / 2, size * 0.36);
+    drawAbilityIcon(ctx, ab.id, x + size / 2, y + size / 2, size * 0.36);
     if (remain > 0 && ok) {
       const f = clamp(remain / ab.cd, 0, 1);
       ctx.save();
@@ -895,101 +997,6 @@ export class Renderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, x - 3 * s + lw / 2, y + size - 4.5 * s);
-    ctx.restore();
-  }
-
-  drawIcon(ctx, slot, cx, cy, r) {
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.strokeStyle = C.chalk;
-    ctx.fillStyle = C.chalk;
-    ctx.lineWidth = Math.max(2, r * 0.16);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    switch (slot) {
-      case 'Q': // trait rapide
-        ctx.beginPath();
-        ctx.moveTo(-r, r * 0.8);
-        ctx.lineTo(r * 0.75, -r * 0.75);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(r, -r);
-        ctx.lineTo(r * 0.15, -r * 0.82);
-        ctx.lineTo(r * 0.82, -r * 0.15);
-        ctx.closePath();
-        ctx.fill();
-        ctx.globalAlpha = 0.55;
-        ctx.beginPath();
-        ctx.moveTo(-r, r * 0.15);
-        ctx.lineTo(-r * 0.45, -r * 0.4);
-        ctx.moveTo(-r * 0.2, r);
-        ctx.lineTo(r * 0.35, r * 0.45);
-        ctx.stroke();
-        break;
-      case 'W': // zone qui explose
-        ctx.beginPath();
-        ctx.arc(0, 0, r * 0.95, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(0, 0, r * 0.35, 0, Math.PI * 2);
-        ctx.fill();
-        for (let i = 0; i < 8; i++) {
-          const a = (i * Math.PI) / 4;
-          ctx.beginPath();
-          ctx.moveTo(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55);
-          ctx.lineTo(Math.cos(a) * r * 0.75, Math.sin(a) * r * 0.75);
-          ctx.stroke();
-        }
-        break;
-      case 'E': // ruée
-        for (const off of [-0.45, 0.25]) {
-          ctx.beginPath();
-          ctx.moveTo(r * off - r * 0.35, -r * 0.7);
-          ctx.lineTo(r * off + r * 0.35, 0);
-          ctx.lineTo(r * off - r * 0.35, r * 0.7);
-          ctx.stroke();
-        }
-        break;
-      case 'R': // flèche de glace
-        ctx.beginPath();
-        ctx.moveTo(-r, 0);
-        ctx.lineTo(r * 0.4, 0);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(r, 0);
-        ctx.lineTo(r * 0.2, -r * 0.55);
-        ctx.lineTo(r * 0.35, 0);
-        ctx.lineTo(r * 0.2, r * 0.55);
-        ctx.closePath();
-        ctx.fill();
-        for (const sx of [-0.7, -0.35]) {
-          ctx.beginPath();
-          ctx.moveTo(r * sx, 0);
-          ctx.lineTo(r * (sx - 0.25), -r * 0.35);
-          ctx.moveTo(r * sx, 0);
-          ctx.lineTo(r * (sx - 0.25), r * 0.35);
-          ctx.stroke();
-        }
-        break;
-      case 'D': // éclair de téléportation
-        ctx.beginPath();
-        for (let j = 0; j < 8; j++) {
-          const rr = j % 2 ? r * 0.28 : r;
-          const a = (j * Math.PI) / 4 - Math.PI / 2;
-          ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-        }
-        ctx.closePath();
-        ctx.fill();
-        break;
-      case 'F': // vitesse
-        for (let i = -1; i <= 1; i++) {
-          ctx.beginPath();
-          ctx.moveTo(-r, i * r * 0.55);
-          ctx.quadraticCurveTo(r * 0.2, i * r * 0.55 - r * 0.25, r * 0.9, i * r * 0.55);
-          ctx.stroke();
-        }
-        break;
-    }
     ctx.restore();
   }
 
@@ -1148,4 +1155,162 @@ export class Renderer {
     }
     ctx.restore();
   }
+}
+
+// Icône vectorielle d'un sort (aussi utilisée dans l'écran de build).
+export function drawAbilityIcon(ctx, id, cx, cy, r) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = C.chalk;
+  ctx.fillStyle = C.chalk;
+  ctx.lineWidth = Math.max(2, r * 0.16);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const line = (x0, y0, x1, y1) => {
+    ctx.beginPath();
+    ctx.moveTo(x0 * r, y0 * r);
+    ctx.lineTo(x1 * r, y1 * r);
+    ctx.stroke();
+  };
+  const circle = (x, y, rr, fill) => {
+    ctx.beginPath();
+    ctx.arc(x * r, y * r, rr * r, 0, Math.PI * 2);
+    if (fill) ctx.fill();
+    else ctx.stroke();
+  };
+  const tri = (x0, y0, x1, y1, x2, y2) => {
+    ctx.beginPath();
+    ctx.moveTo(x0 * r, y0 * r);
+    ctx.lineTo(x1 * r, y1 * r);
+    ctx.lineTo(x2 * r, y2 * r);
+    ctx.closePath();
+    ctx.fill();
+  };
+  const star = (n, inner) => {
+    ctx.beginPath();
+    for (let j = 0; j < n * 2; j++) {
+      const rr = j % 2 ? r * inner : r;
+      const a = (j * Math.PI) / n - Math.PI / 2;
+      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+  };
+  const shield = () => {
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(r * 0.85, -r * 0.6);
+    ctx.quadraticCurveTo(r * 0.8, r * 0.5, 0, r);
+    ctx.quadraticCurveTo(-r * 0.8, r * 0.5, -r * 0.85, -r * 0.6);
+    ctx.closePath();
+    ctx.stroke();
+  };
+  switch (id) {
+    case 'trait':
+      line(-1, 0.8, 0.75, -0.75);
+      tri(1, -1, 0.15, -0.82, 0.82, -0.15);
+      ctx.globalAlpha = 0.55;
+      line(-1, 0.15, -0.45, -0.4);
+      line(-0.2, 1, 0.35, 0.45);
+      break;
+    case 'lien':
+      circle(0.35, -0.35, 0.45, true);
+      for (const k of [0, 0.35, 0.7]) circle(-0.55 + k * 0.5, 0.55 - k * 0.5, 0.14, false);
+      break;
+    case 'grappin':
+      line(-0.9, 0.9, 0.3, -0.3);
+      ctx.beginPath();
+      ctx.arc(0.45 * r, -0.2 * r, 0.45 * r, -Math.PI * 0.9, Math.PI * 0.3);
+      ctx.stroke();
+      break;
+    case 'orbe':
+      circle(0, 0, 0.3, true);
+      ctx.beginPath();
+      ctx.arc(0, 0, 0.8 * r, -Math.PI * 0.2, Math.PI * 0.8);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, 0.8 * r, Math.PI * 0.8, Math.PI * 1.8);
+      ctx.globalAlpha = 0.5;
+      ctx.stroke();
+      break;
+    case 'eruption':
+      circle(0, 0, 0.95, false);
+      circle(0, 0, 0.35, true);
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4;
+        line(Math.cos(a) * 0.55, Math.sin(a) * 0.55, Math.cos(a) * 0.75, Math.sin(a) * 0.75);
+      }
+      break;
+    case 'salve':
+      for (let i = 0; i < 4; i++) circle(-0.75 + i * 0.5, 0.75 - i * 0.5, 0.18 + i * 0.04, true);
+      break;
+    case 'cage':
+      circle(0, 0, 0.8, false);
+      ctx.setLineDash([r * 0.25, r * 0.18]);
+      circle(0, 0, 0.5, false);
+      break;
+    case 'bouclier':
+    case 'barriere':
+      shield();
+      if (id === 'barriere') line(-0.4, 0, 0.4, 0);
+      break;
+    case 'bond':
+      for (const off of [-0.45, 0.25]) {
+        ctx.beginPath();
+        ctx.moveTo((off - 0.35) * r, -0.7 * r);
+        ctx.lineTo((off + 0.35) * r, 0);
+        ctx.lineTo((off - 0.35) * r, 0.7 * r);
+        ctx.stroke();
+      }
+      break;
+    case 'elan':
+    case 'fantome':
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-r, i * r * 0.55);
+        ctx.quadraticCurveTo(r * 0.2, i * r * 0.55 - r * 0.25, r * 0.9, i * r * 0.55);
+        ctx.stroke();
+      }
+      if (id === 'elan') tri(1, 0, 0.55, -0.3, 0.55, 0.3);
+      break;
+    case 'voile':
+      circle(0, 0, 0.9, false);
+      ctx.globalAlpha = 0.4;
+      circle(0, 0, 0.6, true);
+      break;
+    case 'glace':
+      line(-1, 0, 0.4, 0);
+      tri(1, 0, 0.2, -0.55, 0.2, 0.55);
+      line(-0.7, 0, -0.95, -0.35);
+      line(-0.7, 0, -0.95, 0.35);
+      break;
+    case 'rayon':
+      ctx.lineWidth = r * 0.45;
+      line(-1, 0.5, 1, -0.5);
+      ctx.strokeStyle = '#0b1018';
+      ctx.lineWidth = r * 0.12;
+      line(-1, 0.5, 1, -0.5);
+      break;
+    case 'meteore':
+      circle(0.3, 0.3, 0.45, true);
+      ctx.globalAlpha = 0.6;
+      line(-0.9, -0.9, 0.05, 0.05);
+      line(-0.4, -1, 0.3, -0.3);
+      line(-1, -0.4, -0.3, 0.3);
+      break;
+    case 'flash':
+      star(4, 0.28);
+      break;
+    case 'soin':
+      ctx.lineWidth = r * 0.35;
+      line(0, -0.8, 0, 0.8);
+      line(-0.8, 0, 0.8, 0);
+      break;
+    case 'purge':
+      star(6, 0.45);
+      break;
+    default:
+      circle(0, 0, 0.6, false);
+  }
+  ctx.restore();
 }

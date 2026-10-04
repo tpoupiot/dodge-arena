@@ -77,8 +77,17 @@ export class Input {
 
   move(isClick) {
     const w = this.world();
-    this.h.command({ k: 'move', x: w.x, y: w.y });
-    if (isClick) this.h.click(w.x, w.y);
+    const target = this.h.pick ? this.h.pick(w.x, w.y) : null;
+    if (target) {
+      // Clic droit sur un ennemi : on le poursuit et on l'attaque, comme dans LoL.
+      if (isClick || target !== this.lastTarget) this.h.command({ k: 'attack', id: target });
+      if (isClick) this.h.click(w.x, w.y, true);
+      this.lastTarget = target;
+    } else {
+      this.h.command({ k: 'move', x: w.x, y: w.y });
+      if (isClick) this.h.click(w.x, w.y, false);
+      this.lastTarget = null;
+    }
     this.lastMoveAt = performance.now();
     this.lastMovePos = w;
   }
@@ -122,7 +131,7 @@ export class Input {
       return;
     }
     const mode = settings.castMode;
-    if (mode === 'quick' || action === 'F') this.cast(action);
+    if (mode === 'quick' || (this.h.instant && this.h.instant(action))) this.cast(action);
     else if (mode === 'indicator') this.aim = { slot: action };
     else this.aim = this.aim && this.aim.slot === action ? null : { slot: action };
   }

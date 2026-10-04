@@ -77,10 +77,11 @@ export class NetGame {
     this.renderT = 0;
     this.lastFrame = null;
     this.localFx = [];
+    this.world = { get: (id) => this.players.get(id) };
     this.localHooks = {
       onBlink: (p, fx, fy, t) => this.localFx.push({ e: 'flash', id: p.id, fx, fy, x: p.x, y: p.y, t, local: true }),
       onDash: (p, t) => this.localFx.push({ e: 'dash', id: p.id, t, local: true }),
-      onBuff: (p, slot, t) => this.localFx.push({ e: 'buff', id: p.id, slot, t, local: true }),
+      onBuff: (p, ab, t) => this.localFx.push({ e: 'buff', id: p.id, ab: ab.id, t, local: true }),
       onCast: (p, ab, x, y, t) => this.localFx.push({ e: 'cast', id: p.id, slot: ab.slot, x, y, t, local: true }),
     };
   }
@@ -218,7 +219,7 @@ export class NetGame {
           inp.done = true;
         }
       }
-      stepPlayer(st, t, tn, this.rules);
+      stepPlayer(st, t, tn, this.rules, this.world);
       t = tn;
     }
     if (this.local) {
@@ -257,7 +258,7 @@ export class NetGame {
             inp.done = true;
           }
         }
-        stepPlayer(this.local, this.predT, tn, this.rules);
+        stepPlayer(this.local, this.predT, tn, this.rules, this.world);
         this.predT = tn;
       }
     }
@@ -290,7 +291,7 @@ export class NetGame {
       const q = clonePlayer(p);
       let t = this.snapT, n = 0;
       while (t + DT <= A && n++ < 40) {
-        stepPlayer(q, t, t + DT, this.rules);
+        stepPlayer(q, t, t + DT, this.rules, this.world);
         t += DT;
       }
       const e = extrapolate(q, t, A - t, this.rules);
@@ -321,7 +322,7 @@ export class NetGame {
       if (p && p.alive) pos.set(id, id === this.you ? this.localPos() : this.remotePos(id, A));
     }
     for (const s of this.spells.values()) {
-      if (s.kind !== 'line' || s.pierce || s.cut < Infinity) continue;
+      if (s.kind !== 'line' || s.pierce || s.cut < Infinity) continue; // auto-attaques : le serveur décide
       if (s.hiddenAt !== null) {
         if (A - s.hiddenAt > timeout) {
           s.hiddenAt = null;
@@ -370,5 +371,6 @@ export class NetGame {
 export function cmdToWire(cmd) {
   if (cmd.k === 'move') return { k: 'move', x: Math.round(cmd.x * 10) / 10, y: Math.round(cmd.y * 10) / 10 };
   if (cmd.k === 'cast') return { k: 'cast', slot: cmd.slot, x: Math.round(cmd.x * 10) / 10, y: Math.round(cmd.y * 10) / 10 };
+  if (cmd.k === 'attack') return { k: 'attack', id: cmd.id };
   return { k: cmd.k };
 }

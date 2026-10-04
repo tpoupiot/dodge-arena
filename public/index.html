@@ -26,6 +26,14 @@
       <input id="name" maxlength="16" autocomplete="nickname" spellcheck="false">
     </label>
 
+    <div class="build-strip">
+      <span class="field-label">Ton build</span>
+      <div class="build-row">
+        <div class="build-icons" id="build-icons" aria-hidden="true"></div>
+        <button class="secondary small" id="open-build">Modifier le build</button>
+      </div>
+    </div>
+
     <p class="touch-note" id="touch-note" hidden>Ce jeu se joue au clavier et à la souris.</p>
 
     <div class="modes" id="modes">
@@ -166,6 +174,7 @@
     <div class="button-row">
       <button class="primary" id="ready-btn">Je suis prêt</button>
       <button class="secondary" id="leave-btn">Quitter le salon</button>
+      <button class="link" id="lobby-build">Modifier mon build</button>
     </div>
 
     <div class="chat-box">
@@ -209,6 +218,18 @@
         <button class="primary" id="pause-resume">Reprendre</button>
         <button class="secondary" id="pause-settings">Paramètres</button>
         <button class="secondary" id="pause-quit">Abandonner la partie</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Build -->
+  <section id="build" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="build-title">
+    <div class="panel scroll wide">
+      <h2 class="screen-title" id="build-title">Ton build</h2>
+      <p class="hint">Choisis un sort par touche et deux sorts d'invocateur. Les changements comptent dès la prochaine partie. En survie, seuls E, D et F servent.</p>
+      <div id="build-slots"></div>
+      <div class="button-row">
+        <button class="primary" id="close-build">Valider</button>
       </div>
     </div>
   </section>

@@ -2,7 +2,7 @@
 // Elle tourne là où tourne la partie (serveur pour le mode en ligne, navigateur pour l'entraînement).
 
 import { PLAYER_RADIUS as R } from './constants.js';
-import { ABILITIES } from './abilities.js';
+import { abilityOf, AUTO } from './abilities.js';
 import { boundsAt, canCast, linePos, lineEnd, speedAt } from './sim.js';
 import { gauss, segPointDist2, clamp } from './util.js';
 
@@ -57,6 +57,7 @@ export class Bot {
     this.trackEnemies(t);
     this.cur = this.m.kind === 'versus' ? this.chooseTarget(t) : null;
     const spells = this.visibleSpells(t);
+    this.trySupport(t);
     this.plan(t, spells);
     if (this.m.kind === 'versus') this.attack(t, spells);
   }
@@ -247,10 +248,10 @@ export class Bot {
       if (score < bestScore) { bestScore = score; best = [cx, cy]; bestDg = dg; }
     }
 
-    // Danger imminent impossible à éviter en marchant : Bond, Flash ou Fantôme.
+    // Danger imminent impossible à éviter en marchant : sort de mobilité ou de protection.
     if (bestDg.total > 0 && bestDg.first < 0.4 && m.rng() < L.blink) {
       if (this.tryBlink(t, spells, b)) return;
-      if (canCast(me, 'F', t, rules) && bestDg.first > 0.15) this.cmd({ k: 'cast', slot: 'F', x: me.x, y: me.y });
+      this.tryDefensive(t, bestDg.first);
     }
 
     const moved = !this.goal || Math.hypot(best[0] - this.goal[0], best[1] - this.goal[1]) > 22;
@@ -264,19 +265,18 @@ export class Bot {
     }
   }
 
+  // Les sorts du build qui déplacent instantanément (Bond, Flash).
   tryBlink(t, spells, b) {
     const me = this.me, rules = this.m.rules;
-    const options = [];
-    if (canCast(me, 'E', t, rules)) options.push('E');
-    if (canCast(me, 'D', t, rules)) options.push('D');
-    for (const slot of options) {
-      const range = ABILITIES[slot].range;
+    for (const slot of ['E', 'D', 'F']) {
+      const ab = abilityOf(me, slot);
+      if ((ab.kind !== 'dash' && ab.kind !== 'blink') || !canCast(me, slot, t, rules)) continue;
       let best = null, bestD = Infinity;
       for (let i = 0; i < 12; i++) {
         const a = (i * Math.PI) / 6;
-        const x = clamp(me.x + Math.cos(a) * range, b.x0 + R + 8, b.x1 - R - 8);
-        const y = clamp(me.y + Math.sin(a) * range, b.y0 + R + 8, b.y1 - R - 8);
-        const dg = this.standDanger(t + (slot === 'E' ? 0.16 : 0), 0.6, spells, x, y) + this.strategic(x, y, b) * 0.2;
+        const x = clamp(me.x + Math.cos(a) * ab.range, b.x0 + R + 8, b.x1 - R - 8);
+        const y = clamp(me.y + Math.sin(a) * ab.range, b.y0 + R + 8, b.y1 - R - 8);
+        const dg = this.standDanger(t + (ab.duration || 0), 0.6, spells, x, y) + this.strategic(x, y, b) * 0.2;
         if (dg < bestD) { bestD = dg; best = { x, y }; }
       }
       if (best && bestD < 5) {
@@ -286,6 +286,33 @@ export class Bot {
       }
     }
     return false;
+  }
+
+  // Boucliers, anti-sort et vitesse quand on va être touché.
+  tryDefensive(t, first) {
+    const me = this.me, rules = this.m.rules;
+    for (const slot of ['E', 'W', 'D', 'F']) {
+      const ab = abilityOf(me, slot);
+      if (ab.kind !== 'buff' || ab.heal || ab.cleanse || !canCast(me, slot, t, rules)) continue;
+      if (ab.speed && first < 0.15) continue;
+      this.cmd({ k: 'cast', slot, x: me.x, y: me.y });
+      return true;
+    }
+    return false;
+  }
+
+  // Soin quand la vie est basse, purge quand on est contrôlé.
+  trySupport(t) {
+    const me = this.me, rules = this.m.rules;
+    for (const slot of ['D', 'F']) {
+      const ab = abilityOf(me, slot);
+      if (!canCast(me, slot, t, rules)) continue;
+      const cc = t < me.stunUntil - 0.3 || t < me.rootUntil - 0.3;
+      if ((ab.heal && me.hp < 40) || (ab.cleanse && cc && this.m.rng() < this.L.blink)) {
+        this.cmd({ k: 'cast', slot, x: me.x, y: me.y });
+        return;
+      }
+    }
   }
 
   // ------------------------------------------------------------ attaque
@@ -301,8 +328,8 @@ export class Bot {
     const rng = m.rng;
 
     const shootLine = (slot) => {
-      const ab = ABILITIES[slot];
-      if (!canCast(me, slot, t, rules) || d > ab.range + 30) return false;
+      const ab = abilityOf(me, slot);
+      if (ab.kind !== 'line' || !canCast(me, slot, t, rules) || d > ab.range + 30) return false;
       if (this.standDanger(t, ab.windup + 0.08, spells) > 0) return false;
       const tt = ab.windup + d / ab.speed;
       const k = locked ? 0 : L.lead;
@@ -313,29 +340,32 @@ export class Bot {
       return true;
     };
 
-    const shootCircle = () => {
-      const ab = ABILITIES.W;
-      if (!canCast(me, 'W', t, rules) || d > ab.castRange + ab.radius * 0.6) return false;
+    // Zones (cercle, salve, cage, rayon) : on vise la position prévue au moment de l'impact.
+    const shootArea = (slot) => {
+      const ab = abilityOf(me, slot);
+      if (!['circle', 'salvo', 'ring', 'beam'].includes(ab.kind) || !canCast(me, slot, t, rules)) return false;
+      const reach = ab.kind === 'beam' ? ab.length : ab.kind === 'salvo' ? 150 + ab.spacing * ab.count : (ab.castRange || 800) + (ab.radius || 0) * 0.6;
+      if (d > reach) return false;
       if (this.standDanger(t, ab.windup + 0.08, spells) > 0) return false;
-      const tt = ab.windup + ab.delay;
+      const tt = ab.windup + (ab.delay || 0);
       const k = locked ? 0 : L.lead * 0.75;
       const err = (1 - L.lead) * 90;
-      this.cmd({
-        k: 'cast', slot: 'W',
-        x: e.x + tr.vx * tt * k + gauss(rng) * err,
-        y: e.y + tr.vy * tt * k + gauss(rng) * err,
-      });
+      this.cmd({ k: 'cast', slot, x: e.x + tr.vx * tt * k + gauss(rng) * err, y: e.y + tr.vy * tt * k + gauss(rng) * err });
       return true;
     };
+    const shoot = (slot) => shootLine(slot) || shootArea(slot);
 
     let done = false;
-    if (locked) done = shootLine('R') || shootCircle() || shootLine('Q');
-    if (!done && rng() < L.aggro) done = shootLine('Q');
-    if (!done && rng() < 0.35 * L.aggro) done = shootCircle();
-    if (!done && d < 950 && rng() < 0.08 * L.aggro) done = shootLine('R');
-    if (!done && me.hp < 35 && canCast(me, 'F', t, rules) && rng() < 0.1) {
-      this.cmd({ k: 'cast', slot: 'F', x: me.x, y: me.y });
+    if (locked) done = shoot('R') || shoot('W') || shoot('Q');
+    if (!done && rng() < L.aggro) done = shoot('Q');
+    if (!done && rng() < 0.35 * L.aggro) done = shoot('W');
+    if (!done && d < 950 && rng() < 0.08 * L.aggro) done = shoot('R');
+    // Auto-attaque quand l'ennemi est à portée et qu'on n'a rien lancé.
+    if (!done && d <= AUTO.range + R && me.atk !== e.id && this.standDanger(t, AUTO.windup + 0.05, spells) === 0) {
+      this.cmd({ k: 'attack', id: e.id });
+      done = true;
     }
+    if (!done && me.hp < 35 && rng() < 0.1) this.tryDefensive(t, 1);
     this.nextAttack = t + (done ? 0.35 : 0.15) + (rng() * 0.4) / L.aggro;
   }
 }

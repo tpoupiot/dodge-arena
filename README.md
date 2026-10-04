@@ -6,7 +6,7 @@ Jeu d'esquive de sorts dans le navigateur, avec les contrôles de League of Lege
 - **Contre l'IA** : duel hors ligne en 1v1 ou 1v1v1.
 - **En ligne** : 1v1 ou 1v1v1 contre des amis (salon privé avec code) ou en partie rapide. L'hôte peut compléter un salon avec des IA.
 
-En versus, chacun a le même kit. Des sorts de l'arène tombent sur tout le monde, et le dernier debout gagne la manche. Au bout de 60 s, l'arène rétrécit (mort subite).
+En versus, chacun joue avec son build. Des sorts de l'arène tombent sur tout le monde, et le dernier debout gagne la manche. Au bout de 60 s, l'arène rétrécit (mort subite).
 
 ## Lancer le jeu
 
@@ -30,17 +30,30 @@ Ouvre ensuite http://localhost:3000.
 | Touche | Action |
 | --- | --- |
 | Clic droit | Se déplacer (maintenu : suit le curseur) |
+| Clic droit sur un ennemi | Le poursuivre et l'auto-attaquer |
 | S | S'arrêter |
-| Q | Trait arcanique : projectile rapide |
-| W | Éruption : zone qui explose et ralentit |
-| E | Bond : ruée vers le curseur |
-| R | Lien de glace : grand projectile qui étourdit |
-| D | Flash : téléportation de 400 unités |
-| F | Fantôme : +45 % de vitesse |
+| Q W E R | Sorts du build |
+| D F | Sorts d'invocateur |
 | Échap | Pause (solo) ou menu (en ligne) |
 | Entrée | Discuter (en ligne) |
 
-Les touches suivent leur position sur le clavier, comme dans LoL : sur un clavier AZERTY, les sorts sont sur A Z E R. Tout se reconfigure dans *Paramètres*, y compris le mode de lancement : rapide, rapide avec indicateur, ou normal (clic gauche). En survie, seuls Bond, Flash et Fantôme sont disponibles.
+Les touches suivent leur position sur le clavier, comme dans LoL : sur un clavier AZERTY, les sorts sont sur A Z E R. Tout se reconfigure dans *Paramètres*, y compris le mode de lancement : rapide, rapide avec indicateur, ou normal (clic gauche).
+
+**Auto-attaque** : portée 550, 6 dégâts, une attaque par seconde. Le projectile suit sa cible, comme les attaques à distance de LoL ; seuls un Flash ou un Bond bien placés permettent de sortir de portée.
+
+## Builds
+
+« Modifier le build », dans le menu ou dans le salon, permet de choisir un sort par touche :
+
+| Touche | Choix |
+| --- | --- |
+| Q | Trait arcanique (rapide), Lien obscur (enracine), Grappin (attire), Orbe d'aller-retour |
+| W | Éruption (zone, ralentit), Salve (explosions en ligne), Cage (anneau qui étourdit), Bouclier |
+| E | Bond (ruée), Élan (vitesse), Voile anti-sort (bloque un sort) |
+| R | Lien de glace (étourdit), Rayon final (laser), Météore (énorme zone) |
+| D, F | Flash, Fantôme, Soin, Purge, Barrière |
+
+Le build est envoyé au serveur et s'applique dès la partie suivante. Les IA tirent un build au hasard. En survie, seuls E, D et F servent.
 
 ## Comment ça marche
 
@@ -60,7 +73,7 @@ test/     tests (npm test)
 
 Pour rééquilibrer le jeu :
 
-- dégâts, portées et recharges des sorts : `shared/abilities.js` ;
+- sorts disponibles, dégâts, portées, recharges et auto-attaque : `shared/abilities.js` (un sort ajouté là apparaît automatiquement dans l'écran de build) ;
 - fréquence des sorts de l'arène par difficulté : `shared/spawner.js` ;
 - vitesse, taille de l'arène et durée avant la mort subite : `shared/constants.js`.
 

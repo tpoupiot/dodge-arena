@@ -5,6 +5,7 @@ import {
   MODES, PLAYER_COLORS, SNAPSHOT_EVERY, DT, MAX_NAME, MAX_CHAT, SLOTS, ARENA_W, ARENA_H,
 } from '../shared/constants.js';
 import { botName, BOT_LEVELS } from '../shared/bot.js';
+import { sanitizeBuild, randomBuild } from '../shared/abilities.js';
 import { clamp } from '../shared/util.js';
 
 export const serverNow = () => performance.now() / 1000;
@@ -29,6 +30,7 @@ class Client {
     this.id = newId('p');
     this.ws = ws;
     this.name = 'Joueur';
+    this.build = sanitizeBuild(null);
     this.room = null;
     this.queue = null;
     this.msgWindow = 0;
@@ -104,7 +106,11 @@ export class Lobby {
     switch (m.type) {
       case 'hello':
         c.name = cleanText(m.name, MAX_NAME) || 'Joueur' + Math.floor(100 + Math.random() * 900);
+        if (m.build) c.build = sanitizeBuild(m.build);
         c.send({ type: 'welcome', id: c.id, name: c.name, online: this.clients.size });
+        break;
+      case 'build':
+        c.build = sanitizeBuild(m.build);
         break;
       case 'ping':
         c.send({ type: 'pong', c: m.c, s: serverNow() });
@@ -378,6 +384,7 @@ class Room {
   startMatch() {
     const players = [...this.members.values()].map((m, i) => ({
       id: m.id, name: m.name, color: PLAYER_COLORS[i], bot: m.bot, botLevel: m.botLevel,
+      build: m.bot ? randomBuild() : m.client.build,
     }));
     this.match = new Match({
       kind: 'versus',
@@ -428,6 +435,8 @@ class Room {
       cmd = { k: 'move', x: clamp(fx, -200, ARENA_W + 200), y: clamp(fy, -200, ARENA_H + 200) };
     } else if (m.k === 'stop') {
       cmd = { k: 'stop' };
+    } else if (m.k === 'attack' && typeof m.id === 'string' && m.id.length < 24) {
+      cmd = { k: 'attack', id: m.id };
     } else if (m.k === 'cast' && SLOTS.includes(m.slot) && Number.isFinite(fx) && Number.isFinite(fy)) {
       cmd = { k: 'cast', slot: m.slot, x: clamp(fx, -2000, ARENA_W + 2000), y: clamp(fy, -2000, ARENA_H + 2000) };
     }

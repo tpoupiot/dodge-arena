@@ -5,7 +5,7 @@ import {
   ARENA_W, ARENA_H, PLAYER_RADIUS, MOVE_SPEED, MAX_HP,
   SUDDEN_DEATH_AT, SHRINK_DURATION, SHRINK_MIN,
 } from './constants.js';
-import { ABILITIES } from './abilities.js';
+import { AUTO, abilityOf, sanitizeBuild } from './abilities.js';
 import { clamp, round2 } from './util.js';
 
 // ---------------------------------------------------------------- joueurs
@@ -13,9 +13,12 @@ import { clamp, round2 } from './util.js';
 export function createPlayer(def, slot) {
   return {
     id: def.id, name: def.name, color: def.color, slot, bot: !!def.bot,
+    build: sanitizeBuild(def.build),
     x: ARENA_W / 2, y: ARENA_H / 2, tx: ARENA_W / 2, ty: ARENA_H / 2, mv: false, ang: 0,
     hp: MAX_HP, alive: true, left: false,
-    castUntil: 0, castSlot: '', rootUntil: 0, stunUntil: 0, slowUntil: 0, slowAmt: 0, ghostUntil: 0,
+    castUntil: 0, castDur: 0, castSlot: '', rootUntil: 0, stunUntil: 0, slowUntil: 0, slowAmt: 0,
+    ghostUntil: 0, boostMul: 1, shield: 0, shieldUntil: 0, spellShieldUntil: 0,
+    atk: null, atkReady: 0,
     dash: null,
     cds: { Q: 0, W: 0, E: 0, R: 0, D: 0, F: 0 },
     seq: 0,
@@ -30,7 +33,8 @@ export function resetForRound(p, sp) {
   p.x = sp.x; p.y = sp.y; p.tx = sp.x; p.ty = sp.y; p.mv = false; p.ang = sp.ang;
   p.hp = MAX_HP; p.alive = !p.left;
   p.castUntil = 0; p.castSlot = ''; p.rootUntil = 0; p.stunUntil = 0;
-  p.slowUntil = 0; p.slowAmt = 0; p.ghostUntil = 0; p.dash = null;
+  p.slowUntil = 0; p.slowAmt = 0; p.ghostUntil = 0; p.boostMul = 1; p.dash = null;
+  p.shield = 0; p.shieldUntil = 0; p.spellShieldUntil = 0; p.atk = null; p.atkReady = 0; p.castDur = 0;
   for (const k in p.cds) p.cds[k] = 0;
 }
 
@@ -75,7 +79,7 @@ export const isCasting = (p, t) => t < p.castUntil;
 export function speedAt(p, t) {
   let s = MOVE_SPEED;
   if (t < p.slowUntil) s *= 1 - p.slowAmt;
-  if (t < p.ghostUntil) s *= ABILITIES.F.speedMul;
+  if (t < p.ghostUntil) s *= p.boostMul || 1;
   return s;
 }
 
@@ -85,9 +89,11 @@ export function canWalk(p, t, rules) {
 }
 
 // Avance un joueur de t0 à t1 (un tick).
-export function stepPlayer(p, t0, t1, rules) {
+// world (facultatif) : { get(id) -> joueur, onAttack(p, cible, t) } pour l'auto-attaque.
+export function stepPlayer(p, t0, t1, rules, world) {
   if (!p.alive) return;
   const b = boundsAt(rules, t1);
+  if (p.atk && world) autoAttack(p, t1, rules, world);
   if (p.dash) {
     const d = p.dash;
     const k = d.te > d.ts ? clamp((t1 - d.ts) / (d.te - d.ts), 0, 1) : 1;
@@ -107,6 +113,30 @@ export function stepPlayer(p, t0, t1, rules) {
     }
   }
   clampToBounds(p, b);
+}
+
+// Poursuit la cible puis lance une auto-attaque dès qu'elle est à portée.
+function autoAttack(p, t, rules, world) {
+  const tg = world.get(p.atk);
+  if (!tg || !tg.alive || tg.id === p.id) {
+    p.atk = null;
+    return;
+  }
+  if (p.dash || t < p.castUntil) return;
+  const dx = tg.x - p.x, dy = tg.y - p.y;
+  if (Math.hypot(dx, dy) <= AUTO.range + PLAYER_RADIUS) {
+    p.mv = false;
+    p.ang = Math.atan2(dy, dx);
+    if (t >= p.atkReady && t >= p.stunUntil && t > rules.playAt && !rules.frozen) {
+      p.castUntil = t + AUTO.windup;
+      p.castDur = AUTO.windup;
+      p.castSlot = 'A';
+      p.atkReady = t + AUTO.cd;
+      if (world.onAttack) world.onAttack(p, tg, t);
+    }
+  } else {
+    p.tx = tg.x; p.ty = tg.y; p.mv = true;
+  }
 }
 
 // Point visé par un Flash / Bond : vers (x, y), au plus maxD, dans l'arène.
@@ -130,10 +160,17 @@ export function applyCommand(p, cmd, t, rules, hooks) {
     p.tx = clamp(cmd.x, b.x0 + PLAYER_RADIUS, b.x1 - PLAYER_RADIUS);
     p.ty = clamp(cmd.y, b.y0 + PLAYER_RADIUS, b.y1 - PLAYER_RADIUS);
     p.mv = true;
+    p.atk = null;
     return true;
   }
   if (cmd.k === 'stop') {
     p.mv = false;
+    p.atk = null;
+    return true;
+  }
+  if (cmd.k === 'attack') {
+    if (typeof cmd.id !== 'string' || cmd.id === p.id) return false;
+    p.atk = cmd.id;
     return true;
   }
   if (cmd.k === 'cast') return tryCast(p, cmd.slot, cmd.x, cmd.y, t, rules, hooks);
@@ -141,21 +178,27 @@ export function applyCommand(p, cmd, t, rules, hooks) {
 }
 
 export function canCast(p, slot, t, rules) {
-  const ab = ABILITIES[slot];
+  const ab = abilityOf(p, slot);
   if (!ab || !p.alive || !rules.allowed.includes(slot)) return false;
-  if (t < p.cds[slot] || t < p.stunUntil || p.dash) return false;
-  if ((ab.kind === 'line' || ab.kind === 'circle' || ab.kind === 'dash') && t < p.castUntil) return false;
+  if (t < p.cds[slot]) return false;
+  if (p.dash && !ab.cleanse) return false;
+  if (t < p.stunUntil && !ab.cleanse) return false;
+  const aimed = ab.kind !== 'blink' && ab.kind !== 'buff';
+  if (aimed && t < p.castUntil) return false;
   if ((ab.kind === 'dash' || ab.kind === 'blink') && t < p.rootUntil) return false;
   return true;
 }
 
 function tryCast(p, slot, x, y, t, rules, hooks) {
   if (!canCast(p, slot, t, rules)) return false;
-  const ab = ABILITIES[slot];
+  const ab = abilityOf(p, slot);
   const b = boundsAt(rules, t);
   switch (ab.kind) {
     case 'line':
-    case 'circle': {
+    case 'circle':
+    case 'salvo':
+    case 'ring':
+    case 'beam': {
       let dx = x - p.x, dy = y - p.y;
       if (dx * dx + dy * dy < 1) {
         dx = Math.cos(p.ang); dy = Math.sin(p.ang);
@@ -163,6 +206,7 @@ function tryCast(p, slot, x, y, t, rules, hooks) {
       }
       p.ang = Math.atan2(dy, dx);
       p.castUntil = t + ab.windup;
+      p.castDur = ab.windup;
       p.castSlot = slot;
       p.cds[slot] = t + ab.cd;
       if (hooks && hooks.onCast) hooks.onCast(p, ab, x, y, t);
@@ -188,13 +232,32 @@ function tryCast(p, slot, x, y, t, rules, hooks) {
       return true;
     }
     case 'buff': {
-      p.ghostUntil = t + ab.duration;
+      applyBuff(p, ab, t);
       p.cds[slot] = t + ab.cd;
-      if (hooks && hooks.onBuff) hooks.onBuff(p, slot, t);
+      if (hooks && hooks.onBuff) hooks.onBuff(p, ab, t);
       return true;
     }
   }
   return false;
+}
+
+function applyBuff(p, ab, t) {
+  if (ab.speed) {
+    p.ghostUntil = t + ab.speedDur;
+    p.boostMul = ab.speed;
+  }
+  if (ab.shield) {
+    p.shield = ab.shield;
+    p.shieldUntil = t + ab.shieldDur;
+  }
+  if (ab.spellShield) p.spellShieldUntil = t + ab.spellShield;
+  if (ab.heal) p.hp = Math.min(MAX_HP, p.hp + ab.heal);
+  if (ab.cleanse) {
+    p.stunUntil = Math.min(p.stunUntil, t);
+    p.rootUntil = Math.min(p.rootUntil, t);
+    p.slowUntil = Math.min(p.slowUntil, t);
+    if (p.dash && p.dash.k === 'pull') p.dash = null;
+  }
 }
 
 // Position prédite d'un joueur dt secondes après son état courant (sans nouvelle commande).
@@ -203,7 +266,7 @@ export function extrapolate(p, t, dt, rules) {
   if (dt <= 0 || !p.alive) return { x: p.x, y: p.y };
   const q = { x: p.x, y: p.y, tx: p.tx, ty: p.ty, mv: p.mv, dash: p.dash, alive: true,
     stunUntil: p.stunUntil, rootUntil: p.rootUntil, castUntil: p.castUntil,
-    slowUntil: p.slowUntil, slowAmt: p.slowAmt, ghostUntil: p.ghostUntil, ang: p.ang };
+    slowUntil: p.slowUntil, slowAmt: p.slowAmt, ghostUntil: p.ghostUntil, boostMul: p.boostMul, ang: p.ang };
   stepPlayer(q, t, t + dt, rules);
   return { x: q.x, y: q.y };
 }
@@ -220,6 +283,7 @@ export function spellEnd(s) {
     case 'circle': return s.td;
     case 'beam':
     case 'ring': return s.te;
+    case 'homing': return s.tl + 3;
     default: return s.t0;
   }
 }
@@ -256,9 +320,11 @@ export function packPlayer(p, t) {
     m: p.mv ? 1 : 0, tx: round2(p.tx), ty: round2(p.ty),
     a: Math.round(p.ang * 1000) / 1000,
     hp: p.hp, al: p.alive ? 1 : 0,
-    cu: tm(p.castUntil, t), cs: p.castSlot,
+    cu: tm(p.castUntil, t), cd: p.castDur, cs: p.castSlot,
     ru: tm(p.rootUntil, t), su: tm(p.stunUntil, t),
-    lu: tm(p.slowUntil, t), la: p.slowAmt, gu: tm(p.ghostUntil, t),
+    lu: tm(p.slowUntil, t), la: p.slowAmt, gu: tm(p.ghostUntil, t), bm: p.boostMul,
+    sh: p.shieldUntil > t ? p.shield : 0, shu: tm(p.shieldUntil, t), ss: tm(p.spellShieldUntil, t),
+    at: p.atk || 0, ar: tm(p.atkReady, t),
     d: p.dash ? [p.dash.k, round2(p.dash.fx), round2(p.dash.fy), round2(p.dash.tx), round2(p.dash.ty), p.dash.ts, p.dash.te] : 0,
     c: [tm(p.cds.Q, t), tm(p.cds.W, t), tm(p.cds.E, t), tm(p.cds.R, t), tm(p.cds.D, t), tm(p.cds.F, t)],
     q: p.seq,
@@ -269,7 +335,9 @@ export function unpackInto(o, p) {
   p.x = o.x; p.y = o.y;
   p.mv = !!o.m; p.tx = o.tx; p.ty = o.ty; p.ang = o.a;
   p.hp = o.hp; p.alive = !!o.al;
-  p.castUntil = o.cu; p.castSlot = o.cs;
+  p.castUntil = o.cu; p.castDur = o.cd; p.castSlot = o.cs;
+  p.boostMul = o.bm; p.shield = o.sh; p.shieldUntil = o.shu; p.spellShieldUntil = o.ss;
+  p.atk = o.at || null; p.atkReady = o.ar;
   p.rootUntil = o.ru; p.stunUntil = o.su;
   p.slowUntil = o.lu; p.slowAmt = o.la; p.ghostUntil = o.gu;
   p.dash = o.d ? { k: o.d[0], fx: o.d[1], fy: o.d[2], tx: o.d[3], ty: o.d[4], ts: o.d[5], te: o.d[6] } : null;
@@ -284,6 +352,7 @@ const SPELL_FIELDS = {
   circle: ['x', 'y', 'r', 'tl', 'td'],
   beam: ['ax', 'ay', 'bx', 'by', 'hw', 'ta', 'te'],
   ring: ['x', 'y', 'r', 'th', 'ta', 'te'],
+  homing: ['ox', 'oy', 'tgt', 'speed', 'tl'],
 };
 
 // Version allégée d'un sort pour le réseau (les infos serveur comme les cibles touchées restent sur le serveur).

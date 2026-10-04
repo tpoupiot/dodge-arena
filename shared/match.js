@@ -5,7 +5,7 @@ import {
   DT, COUNTDOWN, SURVIVAL_COUNTDOWN, ROUND_END_DELAY, PLAYER_RADIUS as R,
   SLOTS, SURVIVAL_SLOTS, MAX_INPUT_LEAD,
 } from './constants.js';
-import { PULL_DURATION } from './abilities.js';
+import { PULL_DURATION, AUTO, randomBuild } from './abilities.js';
 import {
   createPlayer, resetForRound, spawnPoints, stepPlayer, applyCommand, boundsAt,
   linePos, lineEnd, packPlayer, packSpell,
@@ -36,7 +36,7 @@ export class Match {
     this.scores = {};
     this.stats = {};
     o.players.forEach((def, i) => {
-      const p = createPlayer(def, i);
+      const p = createPlayer(def.bot && !def.build ? { ...def, build: randomBuild(this.rng) } : def, i);
       this.players.set(p.id, p);
       this.order.push(p.id);
       this.inputs.set(p.id, []);
@@ -66,7 +66,11 @@ export class Match {
       onCast: (p, ab, x, y, t) => this.onCast(p, ab, x, y, t),
       onBlink: (p, fx, fy, t) => this.emit({ e: 'flash', id: p.id, fx: round2(fx), fy: round2(fy), x: round2(p.x), y: round2(p.y), t }),
       onDash: (p, t) => this.emit({ e: 'dash', id: p.id, t }),
-      onBuff: (p, slot, t) => this.emit({ e: 'buff', id: p.id, slot, t }),
+      onBuff: (p, ab, t) => this.emit({ e: 'buff', id: p.id, ab: ab.id, t }),
+    };
+    this.world = {
+      get: (id) => this.players.get(id),
+      onAttack: (p, tg, t) => this.onAttack(p, tg, t),
     };
 
     this.startRound();
@@ -147,7 +151,7 @@ export class Match {
 
     if (this.phase === 'playing') for (const bot of this.bots.values()) bot.update(t1);
 
-    for (const id of this.order) stepPlayer(this.players.get(id), t0, t1, rules);
+    for (const id of this.order) stepPlayer(this.players.get(id), t0, t1, rules, this.world);
 
     if (this.phase === 'playing') {
       if (this.spawner) this.spawner.update(t1);
@@ -193,31 +197,54 @@ export class Match {
 
   onCast(p, ab, x, y, t) {
     this.stats[p.id].casts++;
+    const b = boundsAt(this.rules, t);
+    let dx = x - p.x, dy = y - p.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const ux = dx / d, uy = dy / d;
+    const tl = t + ab.windup;
+    // Point visé, limité à la portée de lancement.
+    const reach = ab.castRange ? Math.min(d, ab.castRange) : d;
+    const ax = clamp(p.x + ux * reach, b.x0, b.x1), ay = clamp(p.y + uy * reach, b.y0, b.y1);
+    const base = { def: ab.def, owner: p.id, target: null, t0: t, dmg: ab.dmg };
     if (ab.kind === 'line') {
-      let dx = x - p.x, dy = y - p.y;
-      const d = Math.hypot(dx, dy) || 1;
-      dx /= d; dy /= d;
       this.addSpell({
-        kind: 'line', def: ab.def, owner: p.id, target: null,
-        t0: t, tl: t + ab.windup, ox: p.x, oy: p.y, dx, dy,
-        speed: ab.speed, range: ab.range, radius: ab.radius, ret: false, pierce: false,
-        dmg: ab.dmg, stun: ab.stun || 0, root: 0, pull: 0, slow: 0, fx: ab.stun ? 'stun' : '',
+        ...base, kind: 'line', tl, ox: p.x, oy: p.y, dx: ux, dy: uy,
+        speed: ab.speed, range: ab.range, radius: ab.radius, ret: !!ab.ret, pierce: !!ab.pierce,
+        stun: ab.stun || 0, root: ab.root || 0, pull: ab.pull || 0, slow: 0,
+        fx: ab.stun ? 'stun' : ab.root ? 'root' : ab.pull ? 'pull' : '',
       });
     } else if (ab.kind === 'circle') {
-      const dx = x - p.x, dy = y - p.y;
-      const d = Math.hypot(dx, dy);
-      if (d > ab.castRange) {
-        x = p.x + (dx / d) * ab.castRange;
-        y = p.y + (dy / d) * ab.castRange;
-      }
-      const b = boundsAt(this.rules, t);
       this.addSpell({
-        kind: 'circle', def: ab.def, owner: p.id, target: null,
-        t0: t, tl: t + ab.windup, td: t + ab.windup + ab.delay,
-        x: clamp(x, b.x0, b.x1), y: clamp(y, b.y0, b.y1), r: ab.radius,
-        dmg: ab.dmg, slow: ab.slow, slowDur: ab.slowDur, fx: 'slow',
+        ...base, kind: 'circle', tl, td: tl + ab.delay, x: ax, y: ay, r: ab.radius,
+        slow: ab.slow || 0, slowDur: ab.slowDur || 0, fx: ab.slow ? 'slow' : '',
+      });
+    } else if (ab.kind === 'salvo') {
+      for (let i = 0; i < ab.count; i++) {
+        const k = 150 + i * ab.spacing;
+        this.addSpell({
+          ...base, kind: 'circle', tl, td: tl + ab.delay + i * ab.stagger,
+          x: clamp(p.x + ux * k, b.x0, b.x1), y: clamp(p.y + uy * k, b.y0, b.y1), r: ab.radius, fx: '',
+        });
+      }
+    } else if (ab.kind === 'ring') {
+      this.addSpell({
+        ...base, kind: 'ring', tl, ta: tl + ab.delay, te: tl + ab.delay + ab.active,
+        x: ax, y: ay, r: ab.radius, th: ab.thickness, stun: ab.stun || 0, fx: 'stun',
+      });
+    } else if (ab.kind === 'beam') {
+      this.addSpell({
+        ...base, kind: 'beam', tl, ta: t + ab.delay, te: t + ab.delay + ab.active,
+        ax: p.x, ay: p.y, bx: p.x + ux * ab.length, by: p.y + uy * ab.length, hw: ab.halfWidth, fx: '',
       });
     }
+  }
+
+  onAttack(p, tg, t) {
+    this.stats[p.id].casts++;
+    this.addSpell({
+      kind: 'homing', def: 'auto', owner: p.id, target: null, tgt: tg.id, t0: t, tl: t + AUTO.windup,
+      ox: p.x, oy: p.y, px: p.x, py: p.y, speed: AUTO.speed, dmg: AUTO.dmg, fx: '',
+    });
   }
 
   // Fin anticipée (touché, annulé) : les clients en sont informés.
@@ -237,7 +264,8 @@ export class Match {
 
   updateSpells(t0, t1) {
     for (const s of this.spells.values()) {
-      if (s.kind === 'line') this.updateLine(s, t0, t1);
+      if (s.kind === 'homing') this.updateHoming(s, t0, t1);
+      else if (s.kind === 'line') this.updateLine(s, t0, t1);
       else if (s.kind === 'circle') {
         if (t1 >= s.td) {
           const rr = (s.r + R) ** 2;
@@ -268,6 +296,23 @@ export class Match {
         if (t1 >= s.te) this.expireSpell(s);
       }
     }
+  }
+
+  // Auto-attaque : suit sa cible jusqu'à la toucher.
+  updateHoming(s, t0, t1) {
+    if (t1 <= s.tl) return;
+    const tg = this.players.get(s.tgt);
+    if (!tg || !tg.alive) return this.endSpell(s, t1, s.px, s.py, 'cancel');
+    const step = s.speed * (t1 - Math.max(t0, s.tl));
+    const dx = tg.x - s.px, dy = tg.y - s.py;
+    const d = Math.hypot(dx, dy);
+    if (d <= step + R * 0.5) {
+      this.hit(s, tg, t1, tg.x - (dx / (d || 1)) * R, tg.y - (dy / (d || 1)) * R);
+      return this.endSpell(s, t1, tg.x, tg.y, 'hit');
+    }
+    s.px += (dx / d) * step;
+    s.py += (dy / d) * step;
+    if (t1 > s.tl + 3) this.endSpell(s, t1, s.px, s.py, 'cancel');
   }
 
   updateLine(s, t0, t1) {
@@ -317,8 +362,20 @@ export class Match {
 
   hit(s, p, t, hx, hy) {
     s.anyHit = true;
+    // Voile anti-sort : bloque entièrement un sort (pas les auto-attaques).
+    if (t < p.spellShieldUntil && s.kind !== 'homing') {
+      p.spellShieldUntil = 0;
+      this.emit({ e: 'hit', sid: s.id, def: s.def, tid: p.id, by: s.owner, dmg: 0, t, x: round2(hx), y: round2(hy), fx: 'block' });
+      return;
+    }
+    let dmg = this.oneHit ? p.hp : s.dmg || 0;
+    if (!this.oneHit && t < p.shieldUntil && p.shield > 0) {
+      const absorbed = Math.min(p.shield, dmg);
+      p.shield -= absorbed;
+      dmg -= absorbed;
+    }
     const before = p.hp;
-    p.hp = Math.max(0, p.hp - (this.oneHit ? p.hp : s.dmg || 0));
+    p.hp = Math.max(0, p.hp - dmg);
     const dealt = before - p.hp;
     if (s.owner && this.stats[s.owner]) {
       this.stats[s.owner].dmg += dealt;

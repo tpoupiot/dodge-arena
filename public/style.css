@@ -188,6 +188,86 @@ input[type="text"]:focus {
   background: rgba(251, 113, 133, 0.08);
 }
 
+/* Build */
+.build-strip {
+  display: grid;
+  gap: 6px;
+}
+
+.build-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.build-icons {
+  display: flex;
+  gap: 4px;
+}
+
+.build-icons canvas {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line-hi);
+}
+
+.panel.wide {
+  width: min(760px, 100%);
+}
+
+.build-slot {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.build-key {
+  font: 900 1.9375rem/1 var(--font-d);
+  color: var(--mist);
+}
+
+.build-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.build-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 5px;
+  background: transparent;
+  border: 1px solid var(--line-hi);
+  color: var(--mist);
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.build-opt canvas {
+  width: 32px;
+  height: 32px;
+}
+
+.build-opt:hover {
+  color: var(--chalk);
+}
+
+.build-opt[aria-checked="true"] {
+  border-color: var(--chalk);
+  color: var(--chalk);
+  background: rgba(233, 238, 243, 0.08);
+}
+
+.build-desc {
+  margin: 8px 0 0;
+  color: var(--mist);
+  font-size: 0.9375rem;
+}
+
 /* Liste des modes : un accordéon, pas des cartes */
 .modes {
   border-bottom: 1px solid var(--line);

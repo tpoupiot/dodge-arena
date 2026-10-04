@@ -47,8 +47,8 @@ export class Fx {
   }
 
   // Marqueur de déplacement façon MOBA (clic droit).
-  click(x, y) {
-    this.markers.push({ x, y, t: 0, life: 0.42 });
+  click(x, y, attack = false) {
+    this.markers.push({ x, y, t: 0, life: 0.42, color: attack ? '#f87171' : '#6ee7a0' });
   }
 
   burst(x, y, color, n = 14, speed = 260, life = 0.45, size = 4) {
@@ -136,12 +136,12 @@ export class Fx {
       const a = 1 - k;
       const r = 26 * (1 - k * 0.6);
       ctx.globalAlpha = a;
-      ctx.strokeStyle = '#6ee7a0';
+      ctx.strokeStyle = m.color;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.ellipse(m.x, m.y, r, r * 0.62, 0, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = '#6ee7a0';
+      ctx.fillStyle = m.color;
       for (let i = 0; i < 4; i++) {
         const ang = (i * Math.PI) / 2 + Math.PI / 4;
         const d = 12 + 22 * (1 - k);

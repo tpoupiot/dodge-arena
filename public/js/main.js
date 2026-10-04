@@ -1,6 +1,6 @@
 // Chef d'orchestre : menus, sessions de jeu (solo, IA, en ligne), boucle d'affichage, effets et sons.
 
-import { Renderer } from './render.js';
+import { Renderer, drawAbilityIcon } from './render.js';
 import { Fx } from './fx.js';
 import { Sfx } from './audio.js';
 import { Input } from './input.js';
@@ -9,7 +9,7 @@ import { Online } from './net.js';
 import {
   settings, saveSettings, resetBinds, ACTIONS, keyLabel, loadKeyboardLayout, formatTime,
 } from './settings.js';
-import { ABILITIES, ENV_SPELLS, spellName } from '../../shared/abilities.js';
+import { ABILITIES, ENV_SPELLS, spellName, abilityOf, poolFor, sanitizeBuild, BUILD_SLOTS, AUTO } from '../../shared/abilities.js';
 import { ENV_COLOR, MODES, PLAYER_RADIUS } from '../../shared/constants.js';
 import { linePos } from '../../shared/sim.js';
 import { BOT_LEVELS } from '../../shared/bot.js';
@@ -83,7 +83,24 @@ const input = new Input(canvas, renderer, {
     if (sessionType === 'online') online.input(cmd);
     else session.input(cmd);
   },
-  click: (x, y) => fx.click(x, y),
+  click: (x, y, attack) => fx.click(x, y, attack),
+  // Ennemi sous le curseur (pour l'auto-attaque au clic droit).
+  pick: (x, y) => {
+    if (!session) return null;
+    const v = session.view();
+    let best = null, bd = PLAYER_RADIUS + 22;
+    for (const p of v.players) {
+      if (p.isYou || !p.alive) continue;
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (d < bd) { bd = d; best = p.id; }
+    }
+    return best;
+  },
+  // Sorts sans visée (boucliers, vitesse, soin...) : toujours lancés à l'appui.
+  instant: (slot) => {
+    const ab = abilityOf({ build: settings.build }, slot);
+    return ab && ab.kind === 'buff';
+  },
   escape: onEscape,
   enter: onEnter,
 });
@@ -118,7 +135,7 @@ function showScreen(name) {
   if (inGame && document.activeElement) document.activeElement.blur();
 }
 
-const OVERLAYS = ['results', 'pause', 'settings', 'help'];
+const OVERLAYS = ['results', 'pause', 'settings', 'help', 'build'];
 
 function anyOverlay() {
   return OVERLAYS.some((id) => !$('#' + id).classList.contains('hidden'));
@@ -243,8 +260,8 @@ async function goOnline(action) {
   sfx.unlock();
   setStatus('Connexion au serveur…');
   try {
-    await online.connect(currentName());
-    online.send({ type: 'hello', name: currentName() }); // pseudo à jour si on l'a changé depuis
+    await online.connect(currentName(), settings.build);
+    online.send({ type: 'hello', name: currentName(), build: settings.build }); // pseudo et build à jour
     setStatus('');
     action();
   } catch {
@@ -275,7 +292,7 @@ function startSurvival() {
   endSession();
   hideOverlay('results');
   const diff = settings.survivalDifficulty;
-  session = new LocalGame({ kind: 'survival', name: currentName(), settings: { difficulty: diff } });
+  session = new LocalGame({ kind: 'survival', name: currentName(), settings: { difficulty: diff }, build: settings.build });
   sessionType = 'survival';
   hud.best = settings.best[diff] || 0;
   hud.dodges = 0;
@@ -288,6 +305,7 @@ function startBots() {
   endSession();
   hideOverlay('results');
   session = new LocalGame({
+    build: settings.build,
     kind: 'versus',
     name: currentName(),
     bots: settings.vsMode === '1v1v1' ? 2 : 1,
@@ -531,6 +549,7 @@ function initGameChat() {
 function onEscape() {
   if (!$('#settings').classList.contains('hidden')) return closeSettings();
   if (!$('#help').classList.contains('hidden')) return hideOverlay('help');
+  if (!$('#build').classList.contains('hidden')) return hideOverlay('build');
   if (!$('#results').classList.contains('hidden')) return;
   if (!$('#pause').classList.contains('hidden')) return resume();
   if (screen === 'game' && session) openPause();
@@ -683,6 +702,92 @@ function initResults() {
   });
 }
 
+// ------------------------------------------------------------ build
+
+const SLOT_TINTS = { Q: '#38bdf8', W: '#fb923c', E: '#4ade80', R: '#93c5fd', D: '#facc15', F: '#5eead4' };
+
+// Petite icône de sort dessinée dans un canvas (même dessin que dans le jeu).
+function iconCanvas(id, slot, size = 64) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, size);
+  grd.addColorStop(0, SLOT_TINTS[slot] + '66');
+  grd.addColorStop(1, '#0b1018');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, size, size);
+  drawAbilityIcon(g, id, size / 2, size / 2, size * 0.34);
+  return c;
+}
+
+function renderBuildStrip() {
+  const box = $('#build-icons');
+  box.textContent = '';
+  for (const slot of BUILD_SLOTS) {
+    const c = iconCanvas(settings.build[slot], slot);
+    c.title = `${slot} : ${ABILITIES[settings.build[slot]].name}`;
+    box.append(c);
+  }
+}
+
+function renderBuildModal() {
+  const root = $('#build-slots');
+  root.textContent = '';
+  for (const slot of BUILD_SLOTS) {
+    const row = document.createElement('div');
+    row.className = 'build-slot';
+    const key = document.createElement('div');
+    key.className = 'build-key';
+    key.textContent = keyLabel(settings.binds[slot]);
+    const right = document.createElement('div');
+    const opts = document.createElement('div');
+    opts.className = 'build-options';
+    opts.setAttribute('role', 'radiogroup');
+    opts.setAttribute('aria-label', `Sort ${slot}`);
+    for (const id of poolFor(slot)) {
+      const ab = ABILITIES[id];
+      const b = document.createElement('button');
+      b.className = 'build-opt';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(settings.build[slot] === id));
+      b.append(iconCanvas(id, slot), ab.name);
+      b.addEventListener('click', () => chooseSpell(slot, id));
+      opts.append(b);
+    }
+    const desc = document.createElement('p');
+    desc.className = 'build-desc';
+    const cur = ABILITIES[settings.build[slot]];
+    desc.textContent = `${cur.desc} Recharge ${String(cur.cd).replace('.', ',')} s.`;
+    right.append(opts, desc);
+    row.append(key, right);
+    root.append(row);
+  }
+}
+
+function chooseSpell(slot, id) {
+  const b = { ...settings.build };
+  // Un même sort d'invocateur ne peut pas être sur D et F : on échange.
+  const other = slot === 'D' ? 'F' : slot === 'F' ? 'D' : null;
+  if (other && b[other] === id) b[other] = b[slot];
+  b[slot] = id;
+  settings.build = sanitizeBuild(b);
+  saveSettings();
+  renderBuildModal();
+  renderBuildStrip();
+  if (online.connected) online.sendBuild(settings.build);
+}
+
+function initBuild() {
+  renderBuildStrip();
+  const open = () => {
+    renderBuildModal();
+    showOverlay('build');
+  };
+  $('#open-build').addEventListener('click', open);
+  $('#lobby-build').addEventListener('click', open);
+  $('#close-build').addEventListener('click', () => hideOverlay('build'));
+}
+
 // ------------------------------------------------------------ paramètres et aide
 
 let waitingBind = null;
@@ -800,8 +905,11 @@ function openHelp() {
   const kit = $('#help-kit');
   kit.textContent = '';
   for (const slot of ['Q', 'W', 'E', 'R', 'D', 'F']) {
-    const ab = ABILITIES[slot];
+    const ab = abilityOf({ build: settings.build }, slot);
     row(kit, [keyLabel(settings.binds[slot])], `${ab.desc} Recharge ${String(ab.cd).replace('.', ',')} s.`, ab.name);
+  }
+  {
+    row(kit, ['Clic droit'], `Sur un ennemi : le poursuit et l'attaque à ${AUTO.range} unités, ${AUTO.dmg} dégâts par coup, une attaque par seconde.`, 'Auto-attaque');
   }
   const env = $('#help-env');
   env.textContent = '';
@@ -847,6 +955,7 @@ function handleEvents(evs) {
         fx.burst(ev.x, ev.y, color, 16, 300, 0.4, 4);
         fx.ring(ev.x, ev.y, color, 8, 54, 0.25, 4);
         const isMe = ev.tid === view.you;
+        if (target && ev.fx === 'block') fx.number(target.x, target.y - 20, 'Bloqué', '#fde68a');
         if (target && ev.dmg > 0) {
           fx.number(target.x, target.y - 20, `-${ev.dmg}`, isMe ? '#ff6b6b' : ev.by === view.you ? '#fde68a' : '#e9eef3', ev.dmg >= 25);
         }
@@ -888,6 +997,7 @@ function handleEvents(evs) {
       case 'buff': {
         const p = playerById(view, ev.id);
         if (p) fx.ring(p.x, p.y, '#5eead4', 20, 84, 0.4, 5);
+        if (p && ev.ab === 'soin') fx.number(p.x, p.y - 20, `+${ABILITIES.soin.heal}`, '#5ee08f');
         sfx.play('buff', 0.7);
         break;
       }
@@ -1049,6 +1159,7 @@ initGameChat();
 initPause();
 initResults();
 initSettings();
+initBuild();
 $('#close-help').addEventListener('click', () => hideOverlay('help'));
 loadKeyboardLayout();
 showScreen('menu');
