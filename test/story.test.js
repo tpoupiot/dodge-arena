@@ -652,3 +652,23 @@ test('un joueur immobile face à un rôdeur finit par perdre', () => {
   assert.equal(m.over, true);
   assert.equal(m.result.win, false);
 });
+
+// ---------------------------------------------------------------- run complète
+
+import { Pilot } from '../tools/pilot.js';
+
+test('run complète : un pilote scripté va de la première salle à la victoire', () => {
+  const m = solo(11);
+  const pilot = new Pilot(m, 'a', { god: true });
+  stepUntil(m, () => {
+    pilot.update();
+    return m.over;
+  }, 60 * 60 * 40);
+  assert.equal(m.over, true, `bloqué en salle ${m.room.def.index + 1}`);
+  assert.equal(m.result.win, true);
+  assert.equal(m.result.cleared, 15);
+  assert.ok(m.result.time > 120, `run trop courte : ${m.result.time} s`);
+  const h = m.players.get('a');
+  assert.ok(['W', 'E', 'R', 'D', 'F'].every((s) => h.build[s]), 'le kit est complet en fin de run');
+  assert.ok(m.stats.a.kills > 30);
+});
