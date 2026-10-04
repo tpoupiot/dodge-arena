@@ -462,3 +462,98 @@ test('coop : un joueur mort revient à la salle suivante avec la moitié de ses 
   assert.ok(m.events.some((e) => e.e === 'revive' && e.id === 'b' && e.hp === 50));
   assert.equal(m.room.heroes, 2);
 });
+
+// ---------------------------------------------------------------- coffre
+
+// Amène un joueur au coffre et renvoie son tirage.
+function openChest(m, id = 'a') {
+  const p = m.players.get(id), c = m.room.chest;
+  p.x = c.x + 40; p.y = c.y; p.tx = p.x; p.ty = p.y; p.mv = false;
+  m.step();
+  return m.room.offers.get(id);
+}
+
+test('coffre : s\'approcher donne un tirage, prendre une carte équipe le sort', () => {
+  const m = solo(1);
+  const h = m.players.get('a');
+  clearRoom(m);
+  m.step();
+  assert.equal(m.room.offers.size, 0, 'trop loin du coffre');
+  m.drainEvents();
+  const offer = openChest(m);
+  assert.equal(offer.cards.length, 3);
+  const ev = m.events.find((e) => e.e === 'offer');
+  assert.equal(ev.id, 'a');
+  assert.deepEqual(ev.cards, offer.cards);
+  assert.equal(ev.heal, SKIP_HEAL);
+  assert.equal(m.botCommand('a', { k: 'move', x: 0, y: 0 }), false, 'on ne marche pas pendant le choix');
+  assert.equal(m.botCommand('a', { k: 'attack', id: 'm1' }), false);
+  const card = offer.cards[1];
+  assert.equal(m.botCommand('a', { k: 'loot', i: 1 }), true);
+  assert.equal(h.build[card.slot], card.ab);
+  assert.equal(h.rar[card.slot], card.rar);
+  const kit = m.events.find((e) => e.e === 'kit');
+  assert.deepEqual({ id: kit.id, slot: kit.slot, ab: kit.ab, rar: kit.rar }, { id: 'a', slot: card.slot, ab: card.ab, rar: card.rar });
+  assert.ok(m.events.some((e) => e.e === 'looted' && e.id === 'a'));
+  assert.equal(m.botCommand('a', { k: 'cast', slot: card.slot, x: h.x + 200, y: h.y }), true, 'utilisable aussitôt');
+  assert.equal(m.botCommand('a', { k: 'loot', i: 0 }), false, 'un seul choix par coffre');
+  assert.equal(m.botCommand('a', { k: 'move', x: h.x - 50, y: h.y }), true);
+  m.step();
+  m.step();
+  assert.equal(m.events.filter((e) => e.e === 'offer').length, 1, 'pas de second tirage');
+});
+
+test('coffre : passer rend des PV, sans dépasser le maximum', () => {
+  const m = solo(1);
+  const h = m.players.get('a');
+  clearRoom(m);
+  h.hp = 50;
+  openChest(m);
+  m.drainEvents();
+  assert.equal(m.botCommand('a', { k: 'loot', i: -1 }), true);
+  assert.equal(h.hp, 80);
+  assert.deepEqual(h.build, EMPTY_KIT);
+  assert.equal(m.events.find((e) => e.e === 'heal').amt, 30);
+  nextRoom(m);
+  clearRoom(m);
+  h.hp = 90;
+  openChest(m);
+  m.botCommand('a', { k: 'loot', i: -1 });
+  assert.equal(h.hp, 100);
+});
+
+test('commande de butin invalide : ignorée', () => {
+  const m = solo(1);
+  assert.equal(m.botCommand('a', { k: 'loot', i: 0 }), false, 'pas de coffre');
+  clearRoom(m);
+  assert.equal(m.botCommand('a', { k: 'loot', i: 0 }), false, 'pas de tirage en attente');
+  openChest(m);
+  for (const i of [3, -2, 1.5, '0', null, undefined, NaN]) {
+    assert.equal(m.botCommand('a', { k: 'loot', i }), false, `i=${i}`);
+  }
+  assert.equal(m.room.offers.get('a').done, false);
+  assert.deepEqual(m.players.get('a').build, EMPTY_KIT);
+});
+
+test('coop : chacun son tirage ; un tirage en attente est perdu au changement de salle ; un mort n\'a pas de coffre', () => {
+  const m = duo(1);
+  clearRoom(m);
+  const oa = openChest(m, 'a'), ob = openChest(m, 'b');
+  assert.ok(oa && ob && oa !== ob);
+  assert.equal(m.botCommand('a', { k: 'loot', i: 0 }), true);
+  // b garde son tirage ouvert, a attend dans la porte jusqu'au départ forcé.
+  toExit(m, 'a');
+  stepUntil(m, () => m.room.def.index === 1, 60 * 13);
+  assert.equal(m.room.def.index, 1);
+  assert.equal(m.room.offers.size, 0);
+  assert.equal(m.botCommand('b', { k: 'loot', i: 0 }), false, 'tirage perdu');
+  assert.deepEqual(m.players.get('b').build, EMPTY_KIT);
+  // Un joueur mort ne reçoit pas de tirage.
+  stepUntil(m, () => m.phase === 'playing');
+  const b = m.players.get('b');
+  m.hit(LETHAL, b, m.time, b.x, b.y);
+  clearRoom(m);
+  b.x = m.room.chest.x; b.y = m.room.chest.y;
+  m.step();
+  assert.equal(m.room.offers.has('b'), false);
+});

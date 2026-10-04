@@ -8,7 +8,7 @@ import { round2 } from '../util.js';
 import { generateRun, TRAPS, doorZone, entryPoints, ROOMS_PER_CHAPTER, SPAWN_WARN } from './rooms.js';
 import { MOBS, ELITE, MOB_TEAM, mobDef } from './mobs.js';
 import { BOSSES, bossDef } from './bosses.js';
-import { heroDef } from './loot.js';
+import { heroDef, drawOffer, applyCard, SKIP_HEAL } from './loot.js';
 
 // Décompte à l'entrée d'une salle (secondes).
 export const INTRO_DELAY = 5;      // première salle : le temps de lire l'intro
@@ -17,6 +17,7 @@ export const BOSS_DELAY = 3.5;
 export const ROOM_DELAY = 1.5;
 export const EXIT_WAIT = 12;       // coop : départ forcé après l'arrivée du premier joueur dans la porte
 export const REVIVE_HP = 0.5;      // coop : part des PV d'un joueur mort à son retour
+export const CHEST_RANGE = 130;    // distance à laquelle un joueur ouvre le coffre
 
 export class StoryMatch extends Match {
   // o = { players: [{ id, name }], time, seed }
@@ -156,7 +157,10 @@ export class StoryMatch extends Match {
     this.sweep();
     this.spawnDue(t1);
     for (const b of this.brains.values()) b.update(t1);
-    if (room.cleared) this.updateExit(t1);
+    if (room.cleared) {
+      this.updateChest(t1);
+      this.updateExit(t1);
+    }
     else if (!this.mobs.size && !this.pending.length) {
       if (room.def.type === 'combat' && room.wave + 1 < room.def.waves.length) this.nextWave(t1 + SPAWN_WARN);
       else this.clearRoom(t1);
@@ -218,6 +222,50 @@ export class StoryMatch extends Match {
       this.emit({ e: 'exit', n: inside, of: alive, until: inside ? room.exitSince + EXIT_WAIT : 0, t });
     }
     if (inside && (inside === alive || t - room.exitSince >= EXIT_WAIT)) this.enterRoom(room.def.index + 1);
+  }
+
+  // ------------------------------------------------------------ coffre
+
+  // Commande de butin, en plus des commandes du moteur. Pas de déplacement pendant un tirage en attente.
+  command(p, cmd, t) {
+    if (cmd.k === 'loot') return this.takeLoot(p, cmd.i, t);
+    const offer = this.room.offers.get(p.id);
+    if (offer && !offer.done && (cmd.k === 'move' || cmd.k === 'attack')) return false;
+    return super.command(p, cmd, t);
+  }
+
+  // Un joueur vivant qui atteint le coffre reçoit son tirage, une seule fois par salle.
+  updateChest(t) {
+    const room = this.room, c = room.chest;
+    if (!c) return;
+    for (const p of this.heroes()) {
+      if (!p.alive || room.offers.has(p.id)) continue;
+      if (Math.hypot(p.x - c.x, p.y - c.y) > CHEST_RANGE) continue;
+      const cards = drawOffer(this.rng, p, room.def.chapter, c.boss);
+      room.offers.set(p.id, { cards, done: false });
+      p.mv = false;
+      p.atk = null;
+      this.emit({ e: 'offer', id: p.id, cards, heal: SKIP_HEAL, t });
+    }
+  }
+
+  // i : indice de la carte prise, ou -1 pour passer (rend des PV).
+  takeLoot(p, i, t) {
+    const offer = this.room.offers.get(p.id);
+    if (!offer || offer.done || !p.alive || !Number.isInteger(i)) return false;
+    if (i === -1) {
+      const amt = Math.min(SKIP_HEAL, p.maxHp - p.hp);
+      p.hp += amt;
+      this.emit({ e: 'heal', id: p.id, amt, t });
+    } else {
+      const card = offer.cards[i];
+      if (!card) return false;
+      applyCard(p, card);
+      this.emit({ e: 'kit', id: p.id, slot: card.slot, ab: card.ab, rar: card.rar, t });
+    }
+    offer.done = true;
+    this.emit({ e: 'looted', id: p.id, t });
+    return true;
   }
 
   // ------------------------------------------------------------ morts et fin de run
