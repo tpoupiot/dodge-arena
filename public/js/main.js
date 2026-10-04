@@ -956,6 +956,8 @@ function handleEvents(evs) {
         fx.ring(ev.x, ev.y, color, 8, 54, 0.25, 4);
         const isMe = ev.tid === view.you;
         if (target && ev.fx === 'block') fx.number(target.x, target.y - 20, 'Bloqué', '#fde68a');
+        if (target && ev.fx === 'mark') fx.number(target.x, target.y - 20, 'Marqué', '#fb923c');
+        if (target && ev.fx === 'pop') fx.ring(target.x, target.y, color, 30, 130, 0.35, 7);
         if (target && ev.dmg > 0) {
           fx.number(target.x, target.y - 20, `-${ev.dmg}`, isMe ? '#ff6b6b' : ev.by === view.you ? '#fde68a' : '#e9eef3', ev.dmg >= 25);
         }

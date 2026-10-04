@@ -1,9 +1,9 @@
 // Tests de la simulation partagée (déplacements, sorts, collisions, parties complètes).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DT, MOVE_SPEED, ARENA_W, ARENA_H, SUDDEN_DEATH_AT, SLOTS, PLAYER_COLORS } from '../shared/constants.js';
+import { DT, MOVE_SPEED, ARENA_W, ARENA_H, SUDDEN_DEATH_AT, SLOTS, PLAYER_COLORS, arenaSize } from '../shared/constants.js';
 import { ABILITIES, AUTO, DEFAULT_BUILD, sanitizeBuild } from '../shared/abilities.js';
-import { createPlayer, stepPlayer, applyCommand, boundsAt } from '../shared/sim.js';
+import { createPlayer, stepPlayer, applyCommand, boundsAt, packPlayer, unpackInto } from '../shared/sim.js';
 import { Match } from '../shared/match.js';
 
 const rules = { playAt: 0, shrink: false, allowed: SLOTS, frozen: false };
@@ -190,4 +190,157 @@ test('un build invalide est corrigé', () => {
   assert.equal(b.Q, DEFAULT_BUILD.Q);
   assert.equal(b.W, DEFAULT_BUILD.W);
   assert.notEqual(b.D, b.F);
+});
+
+// ---------------------------------------------------------------- taille de l'arène
+
+test('l\'arène garde sa taille en 1v1 et s\'agrandit en 1v1v1', () => {
+  assert.deepEqual(arenaSize(1), { w: ARENA_W, h: ARENA_H });
+  assert.deepEqual(arenaSize(2), { w: ARENA_W, h: ARENA_H });
+  const big = arenaSize(3);
+  assert.ok(big.w > ARENA_W && big.h > ARENA_H);
+  assert.equal(big.w / big.h, ARENA_W / ARENA_H, 'même format');
+
+  assert.equal(duel(1).rules.w, ARENA_W);
+  const players = ['a', 'b', 'c'].map((id, i) => ({ id, name: id, color: PLAYER_COLORS[i] }));
+  const m = new Match({ kind: 'versus', players, settings: { roundsToWin: 1, env: 'off' }, seed: 1 });
+  assert.equal(m.rules.w, big.w);
+  assert.equal(m.rules.h, big.h);
+  assert.deepEqual(boundsAt(m.rules, 0), { x0: 0, y0: 0, x1: big.w, y1: big.h });
+  const round = m.events.find((e) => e.e === 'round');
+  assert.equal(round.rules.w, big.w, 'la taille est envoyée aux clients');
+  // Apparitions centrées sur la grande arène et plus écartées qu'avant.
+  const ps = [...m.players.values()];
+  const cx = ps.reduce((s, p) => s + p.x, 0) / 3;
+  assert.ok(Math.abs(cx - big.w / 2) < 1, `cx=${cx}`);
+  assert.ok(Math.max(...ps.map((p) => Math.hypot(p.x - big.w / 2, p.y - big.h / 2))) > 420);
+  // On peut marcher jusqu'au bord de la grande arène.
+  stepUntil(m, () => m.phase === 'playing');
+  const a = m.players.get('a');
+  m.queueInput('a', 1, m.time, { k: 'move', x: 5000, y: a.y });
+  m.step();
+  stepUntil(m, () => !a.mv, 60 * 10);
+  assert.ok(a.x > ARENA_W, `x=${a.x}`);
+  // La mort subite rétrécit autour du centre de la grande arène.
+  const b = boundsAt({ ...m.rules, playAt: 0 }, SUDDEN_DEATH_AT + 100);
+  assert.equal((b.x0 + b.x1) / 2, big.w / 2);
+});
+
+test('les sorts de l\'arène couvrent la grande arène en 1v1v1', () => {
+  const players = ['a', 'b', 'c'].map((id, i) => ({ id, name: id, color: PLAYER_COLORS[i] }));
+  const m = new Match({ kind: 'versus', players, settings: { roundsToWin: 9, env: 'chaos' }, seed: 5 });
+  let far = 0;
+  for (let i = 0; i < 60 * 40 && !m.over; i++) {
+    m.step();
+    for (const s of m.spells.values()) if (!s.owner && s.kind === 'line') far = Math.max(far, s.ox);
+  }
+  assert.ok(far > ARENA_W + 1, `un projectile part du bord droit agrandi (max ox=${far})`);
+});
+
+// ---------------------------------------------------------------- nouveaux sorts
+
+function duelWith(build, seed = 1) {
+  const players = [
+    { id: 'a', name: 'A', color: PLAYER_COLORS[0], build: { ...DEFAULT_BUILD, ...build } },
+    { id: 'b', name: 'B', color: PLAYER_COLORS[1] },
+  ];
+  const m = new Match({ kind: 'versus', players, settings: { roundsToWin: 2, env: 'off' }, seed });
+  stepUntil(m, () => m.phase === 'playing');
+  return m;
+}
+
+function castAndWaitHit(m, slot, def) {
+  const b = m.players.get('b');
+  m.drainEvents();
+  m.queueInput('a', 1, m.time, { k: 'cast', slot, x: b.x, y: b.y });
+  stepUntil(m, () => m.events.some((e) => e.e === 'hit' && e.def === def), 60 * 3);
+  return m.events.find((e) => e.e === 'hit' && e.def === def);
+}
+
+test('Flux marqué : marque sans dégâts, le sort suivant du lanceur fait exploser la marque', () => {
+  const m = duelWith({ W: 'flux' });
+  const b = m.players.get('b');
+  assert.ok(castAndWaitHit(m, 'W', ABILITIES.flux.def), 'le flux touche');
+  assert.equal(b.hp, 100, 'aucun dégât');
+  assert.ok(b.markUntil > m.time);
+  assert.equal(b.markBy, 'a');
+  assert.ok(castAndWaitHit(m, 'Q', ABILITIES.trait.def));
+  assert.equal(b.hp, 100 - ABILITIES.trait.dmg - ABILITIES.flux.markDmg);
+  assert.ok(!(b.markUntil > m.time), 'marque consommée');
+  // Sans marque : dégâts normaux.
+  const before = b.hp;
+  m.hit({ id: 90, dmg: 10, owner: 'a', def: 'q', kind: 'line' }, b, m.time, b.x, b.y);
+  assert.equal(b.hp, before - 10);
+});
+
+test('Flux marqué : la marque expire et ne profite qu\'à son lanceur', () => {
+  const m = duelWith({ W: 'flux' });
+  const b = m.players.get('b');
+  castAndWaitHit(m, 'W', ABILITIES.flux.def);
+  m.hit({ id: 91, dmg: 10, owner: null, def: 'trait', kind: 'line' }, b, m.time, b.x, b.y);
+  assert.equal(b.hp, 90, 'un sort de l\'arène ne déclenche pas la marque');
+  assert.ok(b.markUntil > m.time);
+  m.hit({ id: 92, dmg: 10, owner: 'a', def: 'q', kind: 'line' }, b, b.markUntil + 0.1, b.x, b.y);
+  assert.equal(b.hp, 80, 'marque expirée');
+});
+
+test('Javelot : les dégâts augmentent avec la distance parcourue', () => {
+  const ab = ABILITIES.javelot;
+  const dmgAt = (dist) => {
+    const m = duelWith({ Q: 'javelot' });
+    const a = m.players.get('a'), b = m.players.get('b');
+    b.x = a.x + dist; b.y = a.y;
+    castAndWaitHit(m, 'Q', ab.def);
+    return 100 - b.hp;
+  };
+  const near = dmgAt(150), far = dmgAt(ab.range - 100);
+  assert.ok(near >= ab.dmg && near < ab.dmg + 6, `près=${near}`);
+  assert.ok(far > ab.dmgMax - 6 && far <= ab.dmgMax, `loin=${far}`);
+});
+
+test('Stase : invulnérable mais immobile et sans sort', () => {
+  const m = duelWith({ E: 'stase' });
+  const a = m.players.get('a');
+  m.queueInput('a', 1, m.time, { k: 'cast', slot: 'E', x: a.x, y: a.y });
+  m.step();
+  assert.ok(a.stasisUntil > m.time);
+  m.hit({ id: 93, dmg: 30, stun: 1, owner: 'b', def: 'q', kind: 'line' }, a, m.time, a.x, a.y);
+  m.hit({ id: 94, dmg: 6, owner: 'b', def: 'auto', kind: 'homing' }, a, m.time, a.x, a.y);
+  assert.equal(a.hp, 100);
+  assert.ok(!(a.stunUntil > m.time), 'aucun contrôle');
+  const x = a.x;
+  m.queueInput('a', 2, m.time, { k: 'move', x: 0, y: a.y });
+  m.queueInput('a', 3, m.time, { k: 'cast', slot: 'Q', x: 0, y: a.y });
+  for (let i = 0; i < 30; i++) m.step();
+  assert.equal(a.x, x, 'immobile');
+  assert.equal(m.spells.size, 0, 'aucun sort lancé');
+  stepUntil(m, () => m.time > a.stasisUntil + 0.5, 60 * 3);
+  assert.ok(a.x < x, 'repart ensuite');
+  m.hit({ id: 95, dmg: 30, owner: 'b', def: 'q', kind: 'line' }, a, m.time, a.x, a.y);
+  assert.equal(a.hp, 70);
+});
+
+test('Barrage : traverse tous les joueurs sur son passage', () => {
+  const players = [
+    { id: 'a', name: 'A', color: PLAYER_COLORS[0], build: { ...DEFAULT_BUILD, R: 'barrage' } },
+    { id: 'b', name: 'B', color: PLAYER_COLORS[1] },
+    { id: 'c', name: 'C', color: PLAYER_COLORS[2] },
+  ];
+  const m = new Match({ kind: 'versus', players, settings: { roundsToWin: 2, env: 'off' }, seed: 2 });
+  stepUntil(m, () => m.phase === 'playing');
+  const a = m.players.get('a'), b = m.players.get('b'), c = m.players.get('c');
+  a.x = 100; a.y = 500; b.x = 700; b.y = 520; c.x = 1900; c.y = 480;
+  m.queueInput('a', 1, m.time, { k: 'cast', slot: 'R', x: 1000, y: 500 });
+  stepUntil(m, () => c.hp < 100, 60 * 5);
+  assert.equal(b.hp, 100 - ABILITIES.barrage.dmg);
+  assert.equal(c.hp, 100 - ABILITIES.barrage.dmg);
+});
+
+test('les nouveaux états passent par le snapshot réseau', () => {
+  const p = createPlayer({ id: 'a', name: 'A', color: '#fff' }, 0);
+  p.markUntil = 5; p.markBy = 'b'; p.stasisUntil = 4;
+  const q = unpackInto(packPlayer(p, 1), createPlayer({ id: 'a', name: 'A', color: '#fff' }, 0));
+  assert.equal(q.markUntil, 5);
+  assert.equal(q.markBy, 'b');
+  assert.equal(q.stasisUntil, 4);
 });

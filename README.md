@@ -6,7 +6,7 @@ Jeu d'esquive de sorts dans le navigateur, avec les contrôles de League of Lege
 - **Contre l'IA** : duel hors ligne en 1v1 ou 1v1v1.
 - **En ligne** : 1v1 ou 1v1v1 contre des amis (salon privé avec code) ou en partie rapide. L'hôte peut compléter un salon avec des IA.
 
-En versus, chacun joue avec son build. Des sorts de l'arène tombent sur tout le monde, et le dernier debout gagne la manche. Au bout de 60 s, l'arène rétrécit (mort subite).
+En versus, chacun joue avec son build. Des sorts de l'arène tombent sur tout le monde, et le dernier debout gagne la manche. L'arène est plus grande en 1v1v1 qu'en 1v1. Au bout de 60 s, elle rétrécit (mort subite).
 
 ## Lancer le jeu
 
@@ -47,10 +47,10 @@ Les touches suivent leur position sur le clavier, comme dans LoL : sur un clavie
 
 | Touche | Choix |
 | --- | --- |
-| Q | Trait arcanique (rapide), Lien obscur (enracine), Grappin (attire), Orbe d'aller-retour |
-| W | Éruption (zone, ralentit), Salve (explosions en ligne), Cage (anneau qui étourdit), Bouclier |
-| E | Bond (ruée), Élan (vitesse), Voile anti-sort (bloque un sort) |
-| R | Lien de glace (étourdit), Rayon final (laser), Météore (énorme zone) |
+| Q | Trait arcanique (rapide), Lien obscur (enracine), Grappin (attire), Orbe d'aller-retour, Javelot (dégâts selon la distance) |
+| W | Éruption (zone, ralentit), Salve (explosions en ligne), Cage (anneau qui étourdit), Bouclier, Flux marqué (marque à faire exploser) |
+| E | Bond (ruée), Élan (vitesse), Voile anti-sort (bloque un sort), Stase (invulnérable mais immobile) |
+| R | Lien de glace (étourdit), Rayon final (laser), Météore (énorme zone), Barrage (onde qui traverse tout) |
 | D, F | Flash, Fantôme, Soin, Purge, Barrière |
 
 Le build est envoyé au serveur et s'applique dès la partie suivante. Les IA tirent un build au hasard. En survie, seuls E, D et F servent.
@@ -75,7 +75,7 @@ Pour rééquilibrer le jeu :
 
 - sorts disponibles, dégâts, portées, recharges et auto-attaque : `shared/abilities.js` (un sort ajouté là apparaît automatiquement dans l'écran de build) ;
 - fréquence des sorts de l'arène par difficulté : `shared/spawner.js` ;
-- vitesse, taille de l'arène et durée avant la mort subite : `shared/constants.js`.
+- vitesse, taille de l'arène (de base et à 3 joueurs) et durée avant la mort subite : `shared/constants.js`.
 
 ## Tests
 

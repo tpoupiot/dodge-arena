@@ -60,6 +60,20 @@ export const ABILITIES = {
 		cd: 6,
 		desc: "Part puis revient en traversant tout, 12 dégâts par passage.",
 	},
+	javelot: {
+		slot: "Q",
+		name: "Javelot",
+		kind: "line",
+		def: "javelot",
+		windup: 0.25,
+		speed: 1900,
+		radius: 28,
+		range: 1300,
+		dmg: 8,
+		dmgMax: 28,
+		cd: 3.5,
+		desc: "Projectile fin : de 8 à 28 dégâts selon la distance parcourue.",
+	},
 	// ---------------------------------------------------------------- W
 	eruption: {
 		slot: "W",
@@ -112,10 +126,25 @@ export const ABILITIES = {
 		slot: "W",
 		name: "Bouclier",
 		kind: "buff",
-		shield: 25,
+		shield: 20,
 		shieldDur: 3,
 		cd: 13,
 		desc: "Bouclier qui absorbe 20 dégâts pendant 3 s.",
+	},
+	flux: {
+		slot: "W",
+		name: "Flux marqué",
+		kind: "line",
+		def: "flux",
+		windup: 0.2,
+		speed: 1700,
+		radius: 44,
+		range: 1100,
+		dmg: 0,
+		mark: 4,
+		markDmg: 20,
+		cd: 8,
+		desc: "Marque la cible 4 s : ton prochain sort ou ta prochaine auto-attaque sur elle inflige +20 dégâts.",
 	},
 	// ---------------------------------------------------------------- E
 	bond: {
@@ -143,6 +172,14 @@ export const ABILITIES = {
 		spellShield: 1.5,
 		cd: 14,
 		desc: "Bloque le prochain sort reçu pendant 1,5 s.",
+	},
+	stase: {
+		slot: "E",
+		name: "Stase",
+		kind: "buff",
+		stasis: 1.5,
+		cd: 18,
+		desc: "Invulnérable pendant 1,5 s, mais immobile et sans sort.",
 	},
 	// ---------------------------------------------------------------- R
 	glace: {
@@ -185,6 +222,20 @@ export const ABILITIES = {
 		dmg: 40,
 		cd: 28,
 		desc: "Énorme zone qui s'écrase après 1,1 s, 40 dégâts.",
+	},
+	barrage: {
+		slot: "R",
+		name: "Barrage",
+		kind: "line",
+		def: "barrage",
+		windup: 0.5,
+		speed: 1100,
+		radius: 110,
+		range: 2600,
+		pierce: true,
+		dmg: 30,
+		cd: 32,
+		desc: "Onde très large et lente qui traverse l'arène et tous les joueurs, 30 dégâts.",
 	},
 	// ---------------------------------------------------------------- sorts d'invocateur (D / F)
 	flash: {

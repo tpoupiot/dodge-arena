@@ -3,7 +3,7 @@
 
 import {
   DT, COUNTDOWN, SURVIVAL_COUNTDOWN, ROUND_END_DELAY, PLAYER_RADIUS as R,
-  SLOTS, SURVIVAL_SLOTS, MAX_INPUT_LEAD,
+  SLOTS, SURVIVAL_SLOTS, MAX_INPUT_LEAD, arenaSize,
 } from './constants.js';
 import { PULL_DURATION, AUTO, randomBuild } from './abilities.js';
 import {
@@ -51,7 +51,8 @@ export class Match {
     this.round = 0;
     this.phase = 'countdown';
     this.phaseUntil = 0;
-    this.rules = { playAt: 0, shrink: false, allowed: SLOTS, frozen: false };
+    this.arena = arenaSize(o.players.length); // fixée pour toute la partie
+    this.rules = { playAt: 0, shrink: false, allowed: SLOTS, frozen: false, ...this.arena };
     this.spawner = null;
     this.winner = null;
     this.over = false;
@@ -166,7 +167,7 @@ export class Match {
     this.round++;
     this.spells.clear();
     const active = this.order.filter((id) => !this.players.get(id).left);
-    const pts = spawnPoints(this.kind, active.length);
+    const pts = spawnPoints(this.kind, active.length, this.arena.w, this.arena.h);
     active.forEach((id, i) => resetForRound(this.players.get(id), pts[(i + this.round - 1) % pts.length]));
     for (const id of this.order) {
       const p = this.players.get(id);
@@ -178,6 +179,7 @@ export class Match {
       shrink: this.kind === 'versus',
       allowed: this.kind === 'survival' ? SURVIVAL_SLOTS : SLOTS,
       frozen: false,
+      ...this.arena,
     };
     this.phase = 'countdown';
     this.phaseUntil = playAt;
@@ -211,7 +213,8 @@ export class Match {
         ...base, kind: 'line', tl, ox: p.x, oy: p.y, dx: ux, dy: uy,
         speed: ab.speed, range: ab.range, radius: ab.radius, ret: !!ab.ret, pierce: !!ab.pierce,
         stun: ab.stun || 0, root: ab.root || 0, pull: ab.pull || 0, slow: 0,
-        fx: ab.stun ? 'stun' : ab.root ? 'root' : ab.pull ? 'pull' : '',
+        mark: ab.mark || 0, markDmg: ab.markDmg || 0, dmgMax: ab.dmgMax || 0,
+        fx: ab.stun ? 'stun' : ab.root ? 'root' : ab.pull ? 'pull' : ab.mark ? 'mark' : '',
       });
     } else if (ab.kind === 'circle') {
       this.addSpell({
@@ -349,7 +352,10 @@ export class Match {
         if (best) {
           const hx = pa.x + (pb.x - pa.x) * bestK, hy = pa.y + (pb.y - pa.y) * bestK;
           hitSet.add(best.id);
-          this.hit(s, best, t1, hx, hy);
+          // Javelot : dégâts selon la distance parcourue.
+          const far = s.dmgMax ? clamp(Math.hypot(hx - s.ox, hy - s.oy) / s.range, 0, 1) : 0;
+          this.hit(far ? { ...s, dmg: Math.round(s.dmg + (s.dmgMax - s.dmg) * far) } : s, best, t1, hx, hy);
+          s.anyHit = true;
           this.endSpell(s, t1, hx, hy, 'hit');
           return;
         }
@@ -368,7 +374,23 @@ export class Match {
       this.emit({ e: 'hit', sid: s.id, def: s.def, tid: p.id, by: s.owner, dmg: 0, t, x: round2(hx), y: round2(hy), fx: 'block' });
       return;
     }
+    // Stase : rien ne touche (ni sort, ni auto-attaque).
+    if (t < p.stasisUntil) {
+      this.emit({ e: 'hit', sid: s.id, def: s.def, tid: p.id, by: s.owner, dmg: 0, t, x: round2(hx), y: round2(hy), fx: 'block' });
+      return;
+    }
     let dmg = this.oneHit ? p.hp : s.dmg || 0;
+    // Flux marqué : le prochain coup du lanceur sur la cible marquée fait exploser la marque.
+    let popped = false;
+    if (s.mark) {
+      p.markUntil = t + s.mark;
+      p.markBy = s.owner;
+      p.markDmg = s.markDmg;
+    } else if (s.owner && p.markBy === s.owner && t < p.markUntil) {
+      dmg += p.markDmg;
+      p.markUntil = 0;
+      popped = true;
+    }
     if (!this.oneHit && t < p.shieldUntil && p.shield > 0) {
       const absorbed = Math.min(p.shield, dmg);
       p.shield -= absorbed;
@@ -381,7 +403,7 @@ export class Match {
       this.stats[s.owner].dmg += dealt;
       this.stats[s.owner].hits++;
     }
-    let fx = '';
+    let fx = s.mark ? 'mark' : popped ? 'pop' : '';
     if (p.hp > 0) {
       if (s.slow) {
         p.slowAmt = t < p.slowUntil ? Math.max(p.slowAmt, s.slow) : s.slow;

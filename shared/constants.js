@@ -5,8 +5,15 @@ export const TICK_RATE = 60;               // ticks de simulation par seconde
 export const DT = 1 / TICK_RATE;
 export const SNAPSHOT_EVERY = 2;           // 1 snapshot réseau tous les 2 ticks (30/s)
 
-export const ARENA_W = 1600;
+export const ARENA_W = 1600;              // taille de base (survie, 1v1)
 export const ARENA_H = 900;
+export const ARENA_SCALE_3 = 1.25;         // agrandissement à 3 joueurs
+
+// Taille de l'arène selon le nombre de joueurs de la partie.
+export function arenaSize(n) {
+  const k = n >= 3 ? ARENA_SCALE_3 : 1;
+  return { w: ARENA_W * k, h: ARENA_H * k };
+}
 
 export const PLAYER_RADIUS = 36;           // hitbox des joueurs
 export const MOVE_SPEED = 340;             // vitesse de déplacement de base

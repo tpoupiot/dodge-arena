@@ -18,6 +18,7 @@ export function createPlayer(def, slot) {
     hp: MAX_HP, alive: true, left: false,
     castUntil: 0, castDur: 0, castSlot: '', rootUntil: 0, stunUntil: 0, slowUntil: 0, slowAmt: 0,
     ghostUntil: 0, boostMul: 1, shield: 0, shieldUntil: 0, spellShieldUntil: 0,
+    stasisUntil: 0, markUntil: 0, markBy: null, markDmg: 0,
     atk: null, atkReady: 0,
     dash: null,
     cds: { Q: 0, W: 0, E: 0, R: 0, D: 0, F: 0 },
@@ -34,35 +35,35 @@ export function resetForRound(p, sp) {
   p.hp = MAX_HP; p.alive = !p.left;
   p.castUntil = 0; p.castSlot = ''; p.rootUntil = 0; p.stunUntil = 0;
   p.slowUntil = 0; p.slowAmt = 0; p.ghostUntil = 0; p.boostMul = 1; p.dash = null;
+  p.stasisUntil = 0; p.markUntil = 0; p.markBy = null; p.markDmg = 0;
   p.shield = 0; p.shieldUntil = 0; p.spellShieldUntil = 0; p.atk = null; p.atkReady = 0; p.castDur = 0;
   for (const k in p.cds) p.cds[k] = 0;
 }
 
-export function spawnPoints(kind, n) {
-  const cx = ARENA_W / 2, cy = ARENA_H / 2;
+// w, h : taille de l'arène (les écarts suivent son agrandissement).
+export function spawnPoints(kind, n, w = ARENA_W, h = ARENA_H) {
+  const cx = w / 2, cy = h / 2, k = w / ARENA_W;
   if (kind === 'survival' || n <= 1) return [{ x: cx, y: cy, ang: -Math.PI / 2 }];
-  if (n === 2) return [{ x: cx - 430, y: cy, ang: 0 }, { x: cx + 430, y: cy, ang: Math.PI }];
+  if (n === 2) return [{ x: cx - 430 * k, y: cy, ang: 0 }, { x: cx + 430 * k, y: cy, ang: Math.PI }];
   const pts = [];
   for (let i = 0; i < n; i++) {
     const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
-    pts.push({ x: cx + Math.cos(a) * 420, y: cy + Math.sin(a) * 270, ang: a + Math.PI });
+    pts.push({ x: cx + Math.cos(a) * 420 * k, y: cy + Math.sin(a) * 270 * k, ang: a + Math.PI });
   }
   return pts;
 }
 
 // ---------------------------------------------------------------- arène
 
-export const FULL_BOUNDS = Object.freeze({ x0: 0, y0: 0, x1: ARENA_W, y1: ARENA_H });
-
-// rules = { playAt, shrink, allowed, frozen } : règles de la manche en cours.
+// rules = { playAt, shrink, allowed, frozen, w, h } : règles de la manche en cours (w, h : taille de l'arène).
 export function boundsAt(rules, t) {
-  if (!rules || !rules.shrink) return FULL_BOUNDS;
-  const s = rules.playAt + SUDDEN_DEATH_AT;
-  if (t <= s) return FULL_BOUNDS;
+  const w = (rules && rules.w) || ARENA_W, h = (rules && rules.h) || ARENA_H;
+  const s = rules && rules.shrink ? rules.playAt + SUDDEN_DEATH_AT : Infinity;
+  if (t <= s) return { x0: 0, y0: 0, x1: w, y1: h };
   const k = Math.min(1, (t - s) / SHRINK_DURATION);
   const f = 1 - (1 - SHRINK_MIN) * k;
-  const hw = (ARENA_W * f) / 2, hh = (ARENA_H * f) / 2;
-  return { x0: ARENA_W / 2 - hw, y0: ARENA_H / 2 - hh, x1: ARENA_W / 2 + hw, y1: ARENA_H / 2 + hh };
+  const hw = (w * f) / 2, hh = (h * f) / 2;
+  return { x0: w / 2 - hw, y0: h / 2 - hh, x1: w / 2 + hw, y1: h / 2 + hh };
 }
 
 export function clampToBounds(p, b) {
@@ -75,6 +76,7 @@ export function clampToBounds(p, b) {
 export const isStunned = (p, t) => t < p.stunUntil;
 export const isRooted = (p, t) => t < p.rootUntil;
 export const isCasting = (p, t) => t < p.castUntil;
+export const inStasis = (p, t) => t < p.stasisUntil;
 
 export function speedAt(p, t) {
   let s = MOVE_SPEED;
@@ -85,7 +87,7 @@ export function speedAt(p, t) {
 
 // Peut-on se déplacer pendant le tick qui se termine à t ?
 export function canWalk(p, t, rules) {
-  return p.alive && !p.dash && t > rules.playAt && t >= p.stunUntil && t >= p.rootUntil && t >= p.castUntil;
+  return p.alive && !p.dash && t > rules.playAt && t >= p.stunUntil && t >= p.rootUntil && t >= p.castUntil && !(t < p.stasisUntil);
 }
 
 // Avance un joueur de t0 à t1 (un tick).
@@ -122,7 +124,7 @@ function autoAttack(p, t, rules, world) {
     p.atk = null;
     return;
   }
-  if (p.dash || t < p.castUntil) return;
+  if (p.dash || t < p.castUntil || t < p.stasisUntil) return;
   const dx = tg.x - p.x, dy = tg.y - p.y;
   if (Math.hypot(dx, dy) <= AUTO.range + PLAYER_RADIUS) {
     p.mv = false;
@@ -180,7 +182,7 @@ export function applyCommand(p, cmd, t, rules, hooks) {
 export function canCast(p, slot, t, rules) {
   const ab = abilityOf(p, slot);
   if (!ab || !p.alive || !rules.allowed.includes(slot)) return false;
-  if (t < p.cds[slot]) return false;
+  if (t < p.cds[slot] || t < p.stasisUntil) return false;
   if (p.dash && !ab.cleanse) return false;
   if (t < p.stunUntil && !ab.cleanse) return false;
   const aimed = ab.kind !== 'blink' && ab.kind !== 'buff';
@@ -251,6 +253,11 @@ function applyBuff(p, ab, t) {
     p.shieldUntil = t + ab.shieldDur;
   }
   if (ab.spellShield) p.spellShieldUntil = t + ab.spellShield;
+  if (ab.stasis) {
+    p.stasisUntil = t + ab.stasis;
+    p.mv = false;
+    p.atk = null;
+  }
   if (ab.heal) p.hp = Math.min(MAX_HP, p.hp + ab.heal);
   if (ab.cleanse) {
     p.stunUntil = Math.min(p.stunUntil, t);
@@ -266,7 +273,7 @@ export function extrapolate(p, t, dt, rules) {
   if (dt <= 0 || !p.alive) return { x: p.x, y: p.y };
   const q = { x: p.x, y: p.y, tx: p.tx, ty: p.ty, mv: p.mv, dash: p.dash, alive: true,
     stunUntil: p.stunUntil, rootUntil: p.rootUntil, castUntil: p.castUntil,
-    slowUntil: p.slowUntil, slowAmt: p.slowAmt, ghostUntil: p.ghostUntil, boostMul: p.boostMul, ang: p.ang };
+    stasisUntil: p.stasisUntil, slowUntil: p.slowUntil, slowAmt: p.slowAmt, ghostUntil: p.ghostUntil, boostMul: p.boostMul, ang: p.ang };
   stepPlayer(q, t, t + dt, rules);
   return { x: q.x, y: q.y };
 }
@@ -324,6 +331,7 @@ export function packPlayer(p, t) {
     ru: tm(p.rootUntil, t), su: tm(p.stunUntil, t),
     lu: tm(p.slowUntil, t), la: p.slowAmt, gu: tm(p.ghostUntil, t), bm: p.boostMul,
     sh: p.shieldUntil > t ? p.shield : 0, shu: tm(p.shieldUntil, t), ss: tm(p.spellShieldUntil, t),
+    zu: tm(p.stasisUntil, t), mu: tm(p.markUntil, t), mb: p.markUntil > t ? p.markBy : 0,
     at: p.atk || 0, ar: tm(p.atkReady, t),
     d: p.dash ? [p.dash.k, round2(p.dash.fx), round2(p.dash.fy), round2(p.dash.tx), round2(p.dash.ty), p.dash.ts, p.dash.te] : 0,
     c: [tm(p.cds.Q, t), tm(p.cds.W, t), tm(p.cds.E, t), tm(p.cds.R, t), tm(p.cds.D, t), tm(p.cds.F, t)],
@@ -337,6 +345,7 @@ export function unpackInto(o, p) {
   p.hp = o.hp; p.alive = !!o.al;
   p.castUntil = o.cu; p.castDur = o.cd; p.castSlot = o.cs;
   p.boostMul = o.bm; p.shield = o.sh; p.shieldUntil = o.shu; p.spellShieldUntil = o.ss;
+  p.stasisUntil = o.zu; p.markUntil = o.mu; p.markBy = o.mb || null;
   p.atk = o.at || null; p.atkReady = o.ar;
   p.rootUntil = o.ru; p.stunUntil = o.su;
   p.slowUntil = o.lu; p.slowAmt = o.la; p.ghostUntil = o.gu;

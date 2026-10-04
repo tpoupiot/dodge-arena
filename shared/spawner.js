@@ -1,7 +1,7 @@
 // Générateur des sorts de l'arène : fréquence croissante, déblocage progressif des sorts,
 // visée avec anticipation aléatoire (parfois sur la position actuelle, parfois en avance).
 
-import { ARENA_W, ARENA_H, SUDDEN_DEATH_AT } from './constants.js';
+import { SUDDEN_DEATH_AT } from './constants.js';
 import { ENV_SPELLS } from './abilities.js';
 import { speedAt } from './sim.js';
 import { clamp, rayToRect, pickWeighted, gauss } from './util.js';
@@ -31,7 +31,6 @@ export function makeSpawner(match) {
   return preset ? new EnvSpawner(match, preset) : null;
 }
 
-const W = ARENA_W, H = ARENA_H;
 
 export class EnvSpawner {
   constructor(match, preset) {
@@ -40,6 +39,15 @@ export class EnvSpawner {
     this.start = match.rules.playAt;
     this.next = this.start + preset.first;
     this.rr = Math.floor(match.rng() * 3);
+  }
+
+  // Taille de l'arène de la partie en cours.
+  get W() {
+    return this.m.rules.w;
+  }
+
+  get H() {
+    return this.m.rules.h;
   }
 
   elapsed(t) {
@@ -114,7 +122,7 @@ export class EnvSpawner {
     for (let i = 0; i < 6; i++) {
       const a = rng() * Math.PI * 2;
       const ux = Math.cos(a), uy = Math.sin(a);
-      const d = rayToRect(px, py, ux, uy, 0, 0, W, H);
+      const d = rayToRect(px, py, ux, uy, 0, 0, this.W, this.H);
       const ok = d >= 260 && (!maxDist || d <= maxDist);
       if (ok) return { ux, uy };
       if (!best || (maxDist ? Math.abs(d - maxDist * 0.7) < best.score : d > best.score)) {
@@ -128,15 +136,15 @@ export class EnvSpawner {
     const rng = this.m.rng;
     const speed = def.speed * sm;
     const dir = this.pickDirection(target.x, target.y, def.range ? def.range - 150 : 0);
-    const d0 = rayToRect(target.x, target.y, dir.ux, dir.uy, 0, 0, W, H);
+    const d0 = rayToRect(target.x, target.y, dir.ux, dir.uy, 0, 0, this.W, this.H);
     const lead = rng() < 0.35 ? 0 : 0.3 + rng() * 0.6;
     const aim = this.predict(target, t, def.windup + d0 / speed, lead);
-    aim.x = clamp(aim.x + gauss(rng) * 16, 20, W - 20);
-    aim.y = clamp(aim.y + gauss(rng) * 16, 20, H - 20);
-    const d1 = rayToRect(aim.x, aim.y, dir.ux, dir.uy, 0, 0, W, H);
+    aim.x = clamp(aim.x + gauss(rng) * 16, 20, this.W - 20);
+    aim.y = clamp(aim.y + gauss(rng) * 16, 20, this.H - 20);
+    const d1 = rayToRect(aim.x, aim.y, dir.ux, dir.uy, 0, 0, this.W, this.H);
     const ox = aim.x + dir.ux * d1, oy = aim.y + dir.uy * d1;
     const dx = -dir.ux, dy = -dir.uy;
-    const d2 = rayToRect(aim.x, aim.y, dx, dy, 0, 0, W, H);
+    const d2 = rayToRect(aim.x, aim.y, dx, dy, 0, 0, this.W, this.H);
     this.m.addSpell({
       kind: 'line', def: key, owner: null, target: target.id,
       t0: t, tl: t + def.windup, ox, oy, dx, dy, speed,
@@ -151,7 +159,7 @@ export class EnvSpawner {
     const rng = this.m.rng;
     const delay = def.delay / (1 + (sm - 1) * 0.6);
     const aim = this.predict(target, t, delay, rng() * 0.8);
-    const x = clamp(aim.x + gauss(rng) * 30, 0, W), y = clamp(aim.y + gauss(rng) * 30, 0, H);
+    const x = clamp(aim.x + gauss(rng) * 30, 0, this.W), y = clamp(aim.y + gauss(rng) * 30, 0, this.H);
     this.m.addSpell({
       kind: 'circle', def: key, owner: null, target: target.id,
       t0: t, tl: t, td: t + delay, x, y, r: def.radius,
@@ -169,7 +177,7 @@ export class EnvSpawner {
     for (let i = 0; i < def.count; i++) {
       const off = (i - half) * def.spacing;
       const x = c.x + ux * off, y = c.y + uy * off;
-      if (x < -def.radius || x > W + def.radius || y < -def.radius || y > H + def.radius) continue;
+      if (x < -def.radius || x > this.W + def.radius || y < -def.radius || y > this.H + def.radius) continue;
       this.m.addSpell({
         kind: 'circle', def: key, owner: null, target: i === Math.round(half) ? target.id : null,
         t0: t, tl: t, td: t + delay + i * def.stagger, x, y, r: def.radius, dmg: def.dmg, fx: '',
@@ -183,10 +191,10 @@ export class EnvSpawner {
     const ux = Math.cos(a), uy = Math.sin(a);
     const delay = def.delay / (1 + (sm - 1) * 0.5);
     const aim = this.predict(target, t, delay, rng() * 0.5);
-    aim.x = clamp(aim.x, 1, W - 1);
-    aim.y = clamp(aim.y, 1, H - 1);
-    const da = rayToRect(aim.x, aim.y, ux, uy, 0, 0, W, H);
-    const db = rayToRect(aim.x, aim.y, -ux, -uy, 0, 0, W, H);
+    aim.x = clamp(aim.x, 1, this.W - 1);
+    aim.y = clamp(aim.y, 1, this.H - 1);
+    const da = rayToRect(aim.x, aim.y, ux, uy, 0, 0, this.W, this.H);
+    const db = rayToRect(aim.x, aim.y, -ux, -uy, 0, 0, this.W, this.H);
     this.m.addSpell({
       kind: 'beam', def: key, owner: null, target: target.id,
       t0: t, ta: t + delay, te: t + delay + def.active,
@@ -197,7 +205,7 @@ export class EnvSpawner {
 
   spawnRing(key, def, target, t) {
     const rng = this.m.rng;
-    const x = clamp(target.x + gauss(rng) * 25, 0, W), y = clamp(target.y + gauss(rng) * 25, 0, H);
+    const x = clamp(target.x + gauss(rng) * 25, 0, this.W), y = clamp(target.y + gauss(rng) * 25, 0, this.H);
     this.m.addSpell({
       kind: 'ring', def: key, owner: null, target: target.id,
       t0: t, ta: t + def.delay, te: t + def.delay + def.active,

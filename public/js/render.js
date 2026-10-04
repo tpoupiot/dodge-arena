@@ -10,7 +10,7 @@ const FONT_D = '"Big Shoulders Display", "Barlow", sans-serif';
 const FONT_B = '"Barlow", system-ui, sans-serif';
 const C = {
   night: '#10161f', stone: '#1b2430', stoneHi: '#263241', line: '#33404f',
-  chalk: '#e9eef3', mist: '#93a1b0', self: '#5ee08f', enemy: '#ef4b54', env: ENV_COLOR,
+  chalk: '#e9eef3', mist: '#93a1b0', self: '#5ee08f', enemy: '#ef4b54', shield: '#f1f5f9', env: ENV_COLOR,
 };
 const SLOT_TINT = { Q: '#38bdf8', W: '#fb923c', E: '#4ade80', R: '#93c5fd', D: '#facc15', F: '#5eead4' };
 const HUD_SLOTS = ['Q', 'W', 'E', 'R', 'D', 'F'];
@@ -26,6 +26,9 @@ function mix(hex, hex2, k) {
   return '#' + ((1 << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)).toString(16).slice(1);
 }
 
+// Points de bouclier encore actifs d'un joueur.
+const shieldOf = (st, t) => (st && st.shield > 0 && t < st.shieldUntil ? st.shield : 0);
+
 export class Renderer {
   constructor(canvas) {
     this.canvas = canvas;
@@ -33,6 +36,8 @@ export class Renderer {
     this.mode = 'demo';
     this.glowCache = new Map();
     this.floor = null;
+    this.aw = ARENA_W;
+    this.ah = ARENA_H;
     this.resize();
   }
 
@@ -55,13 +60,13 @@ export class Renderer {
     this.hud = clamp(Math.min(w / 1600, h / 940), 0.7, 1.25);
     if (this.mode === 'game') {
       const top = 64 * this.hud, bottom = 122 * this.hud, side = 14;
-      this.scale = Math.min((w - side * 2) / ARENA_W, (h - top - bottom) / ARENA_H);
-      this.ox = (w - ARENA_W * this.scale) / 2;
-      this.oy = top + (h - top - bottom - ARENA_H * this.scale) / 2;
+      this.scale = Math.min((w - side * 2) / this.aw, (h - top - bottom) / this.ah);
+      this.ox = (w - this.aw * this.scale) / 2;
+      this.oy = top + (h - top - bottom - this.ah * this.scale) / 2;
     } else {
-      this.scale = Math.max(w / ARENA_W, h / ARENA_H) * 1.04;
-      this.ox = (w - ARENA_W * this.scale) / 2;
-      this.oy = (h - ARENA_H * this.scale) / 2;
+      this.scale = Math.max(w / this.aw, h / this.ah) * 1.04;
+      this.ox = (w - this.aw * this.scale) / 2;
+      this.oy = (h - this.ah * this.scale) / 2;
     }
     this.floor = null;
   }
@@ -75,25 +80,25 @@ export class Renderer {
   buildFloor() {
     const s = this.scale * this.dpr;
     const cv = document.createElement('canvas');
-    cv.width = Math.ceil(ARENA_W * s);
-    cv.height = Math.ceil(ARENA_H * s);
+    cv.width = Math.ceil(this.aw * s);
+    cv.height = Math.ceil(this.ah * s);
     const g = cv.getContext('2d');
     g.scale(s, s);
-    const cx = ARENA_W / 2, cy = ARENA_H / 2;
+    const cx = this.aw / 2, cy = this.ah / 2;
 
-    const base = g.createRadialGradient(cx, cy, 40, cx, cy, 980);
+    const base = g.createRadialGradient(cx, cy, 40, cx, cy, (980 * this.aw) / ARENA_W);
     base.addColorStop(0, '#223042');
     base.addColorStop(0.55, '#19222f');
     base.addColorStop(1, '#111821');
     g.fillStyle = base;
-    g.fillRect(0, 0, ARENA_W, ARENA_H);
+    g.fillRect(0, 0, this.aw, this.ah);
 
     // Dalles de pierre irrégulières.
     const rng = mulberry32(1234);
     const tile = 100;
-    for (let y = 0; y < ARENA_H; y += tile) {
+    for (let y = 0; y < this.ah; y += tile) {
       let x = (y / tile) % 2 ? -tile / 2 : 0;
-      for (; x < ARENA_W; x += tile) {
+      for (; x < this.aw; x += tile) {
         const v = rng();
         g.fillStyle = v > 0.5 ? `rgba(255,255,255,${(v - 0.5) * 0.045})` : `rgba(0,0,0,${(0.5 - v) * 0.12})`;
         g.fillRect(x + 2, y + 2, tile - 4, tile - 4);
@@ -101,22 +106,22 @@ export class Renderer {
     }
     g.strokeStyle = 'rgba(0,0,0,0.32)';
     g.lineWidth = 2.5;
-    for (let y = 0; y <= ARENA_H; y += tile) {
+    for (let y = 0; y <= this.ah; y += tile) {
       g.beginPath();
       g.moveTo(0, y);
-      g.lineTo(ARENA_W, y);
+      g.lineTo(this.aw, y);
       g.stroke();
       const off = (y / tile) % 2 ? tile / 2 : 0;
-      for (let x = off; x <= ARENA_W; x += tile) {
+      for (let x = off; x <= this.aw; x += tile) {
         g.beginPath();
         g.moveTo(x, y);
-        g.lineTo(x, Math.min(ARENA_H, y + tile));
+        g.lineTo(x, Math.min(this.ah, y + tile));
         g.stroke();
       }
     }
     for (let i = 0; i < 2600; i++) {
       g.fillStyle = `rgba(255,255,255,${0.012 + rng() * 0.03})`;
-      g.fillRect(rng() * ARENA_W, rng() * ARENA_H, 1.6, 1.6);
+      g.fillRect(rng() * this.aw, rng() * this.ah, 1.6, 1.6);
     }
 
     // Cercles gravés au centre (arène de duel).
@@ -158,10 +163,10 @@ export class Renderer {
     // Ombre portée des murs et liseré.
     const edge = 70;
     const sides = [
-      [0, 0, ARENA_W, edge, 0, 0, 0, edge],
-      [0, ARENA_H - edge, ARENA_W, edge, 0, ARENA_H, 0, ARENA_H - edge],
-      [0, 0, edge, ARENA_H, 0, 0, edge, 0],
-      [ARENA_W - edge, 0, edge, ARENA_H, ARENA_W, 0, ARENA_W - edge, 0],
+      [0, 0, this.aw, edge, 0, 0, 0, edge],
+      [0, this.ah - edge, this.aw, edge, 0, this.ah, 0, this.ah - edge],
+      [0, 0, edge, this.ah, 0, 0, edge, 0],
+      [this.aw - edge, 0, edge, this.ah, this.aw, 0, this.aw - edge, 0],
     ];
     for (const [x, y, w, h, x0, y0, x1, y1] of sides) {
       const lg = g.createLinearGradient(x0, y0, x1, y1);
@@ -172,7 +177,7 @@ export class Renderer {
     }
     g.strokeStyle = 'rgba(233,238,243,0.16)';
     g.lineWidth = 3;
-    g.strokeRect(1.5, 1.5, ARENA_W - 3, ARENA_H - 3);
+    g.strokeRect(1.5, 1.5, this.aw - 3, this.ah - 3);
     this.floor = cv;
   }
 
@@ -212,6 +217,13 @@ export class Renderer {
     ctx.globalCompositeOperation = 'source-over';
     ctx.fillStyle = C.night;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // L'arène change de taille selon le nombre de joueurs : on recadre et on redessine le sol.
+    const aw = (view && view.rules && view.rules.w) || ARENA_W, ah = (view && view.rules && view.rules.h) || ARENA_H;
+    if (aw !== this.aw || ah !== this.ah) {
+      this.aw = aw;
+      this.ah = ah;
+      this.resize();
+    }
     if (!this.floor) this.buildFloor();
     const sh = fx ? fx.shakeOffset() : { x: 0, y: 0 };
     const ox = this.ox + sh.x, oy = this.oy + sh.y;
@@ -231,7 +243,7 @@ export class Renderer {
       if (ui.aim) this.drawAim(ctx, view, ui.aim);
     }
     if (fx) fx.drawWorld(ctx);
-    if (view) this.drawOverheads(ctx, view);
+    if (view) this.drawOverheads(ctx, view, view.t);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (this.mode === 'game' && view) this.drawHud(ctx, view, fx, ui);
@@ -246,17 +258,17 @@ export class Renderer {
     ctx.save();
     ctx.fillStyle = 'rgba(40,6,24,0.55)';
     ctx.beginPath();
-    ctx.rect(0, 0, ARENA_W, ARENA_H);
+    ctx.rect(0, 0, this.aw, this.ah);
     ctx.rect(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0);
     ctx.fill('evenodd');
     ctx.clip('evenodd');
     ctx.strokeStyle = 'rgba(244,63,94,0.13)';
     ctx.lineWidth = 10;
     const off = (t * 40) % 40;
-    for (let x = -ARENA_H; x < ARENA_W; x += 40) {
+    for (let x = -this.ah; x < this.aw; x += 40) {
       ctx.beginPath();
       ctx.moveTo(x + off, 0);
-      ctx.lineTo(x + off + ARENA_H, ARENA_H);
+      ctx.lineTo(x + off + this.ah, this.ah);
       ctx.stroke();
     }
     ctx.restore();
@@ -671,14 +683,34 @@ export class Renderer {
   }
 
   drawStatus(ctx, p, st, t) {
-    // Incantation en cours : arc de progression.
-    if (st.shield > 0 && t < st.shieldUntil) {
-      ctx.strokeStyle = 'rgba(241,245,249,0.85)';
-      ctx.lineWidth = 3 + Math.min(5, st.shield / 8);
+    // Stase : le joueur est figé dans un bloc doré.
+    if (t < st.stasisUntil) {
+      ctx.fillStyle = 'rgba(250,204,21,0.38)';
+      ctx.strokeStyle = 'rgba(253,230,138,0.95)';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, R + 7, 0, Math.PI * 2);
+      for (let i = 0; i < 6; i++) {
+        const a = (i * Math.PI) / 3 + Math.PI / 6;
+        ctx.lineTo(p.x + Math.cos(a) * (R + 12), p.y + Math.sin(a) * (R + 12));
+      }
+      ctx.closePath();
+      ctx.fill();
       ctx.stroke();
     }
+    // Marque du Flux : anneau qui se referme, à la couleur du lanceur.
+    if (t < st.markUntil) {
+      const by = this.pos && this.pos.get(st.markBy);
+      const k = 1 + 0.12 * Math.sin(t * 9);
+      ctx.strokeStyle = rgba(by ? by.color : '#fb923c', 0.95);
+      ctx.lineWidth = 4;
+      ctx.setLineDash([14, 8]);
+      ctx.lineDashOffset = -t * 40;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, (R + 16) * k, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    // Incantation en cours : arc de progression.
     if (t < st.spellShieldUntil) {
       ctx.fillStyle = 'rgba(253,230,138,0.16)';
       ctx.strokeStyle = 'rgba(253,230,138,0.8)';
@@ -731,7 +763,7 @@ export class Renderer {
     }
   }
 
-  drawOverheads(ctx, view) {
+  drawOverheads(ctx, view, t) {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
@@ -742,10 +774,14 @@ export class Renderer {
       const hp = clamp(p.st ? p.st.hp : p.hp, 0, MAX_HP);
       ctx.fillStyle = 'rgba(6,9,14,0.85)';
       ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+      // Le bouclier prolonge la barre de vie (la barre se tasse s'il dépasse le maximum).
+      const sh = shieldOf(p.st, t), tot = Math.max(MAX_HP, hp + sh);
       ctx.fillStyle = p.isYou ? C.self : C.enemy;
-      ctx.fillRect(x, y, (w * hp) / MAX_HP, h);
+      ctx.fillRect(x, y, (w * hp) / tot, h);
+      ctx.fillStyle = C.shield;
+      ctx.fillRect(x + (w * hp) / tot, y, (w * sh) / tot, h);
       ctx.fillStyle = 'rgba(6,9,14,0.7)';
-      for (let i = 1; i < 4; i++) ctx.fillRect(x + (w * i) / 4 - 1, y, 2, h);
+      for (let i = 1; i < 4; i++) ctx.fillRect(x + (w * i * MAX_HP) / (4 * tot) - 1, y, 2, h);
       ctx.font = `600 15px ${FONT_B}`;
       ctx.lineWidth = 4;
       ctx.strokeStyle = 'rgba(6,9,14,0.85)';
@@ -892,21 +928,27 @@ export class Renderer {
     ctx.fillRect(x0 - 3, hpY - 3, total + 6, hpH + 6);
     ctx.fillStyle = '#1d2a22';
     ctx.fillRect(x0, hpY, total, hpH);
+    const sh = shieldOf(me, t), tot = Math.max(MAX_HP, hp + sh);
     ctx.fillStyle = C.self;
-    ctx.fillRect(x0, hpY, (total * hp) / MAX_HP, hpH);
+    ctx.fillRect(x0, hpY, (total * hp) / tot, hpH);
+    ctx.fillStyle = C.shield;
+    ctx.fillRect(x0 + (total * hp) / tot, hpY, (total * sh) / tot, hpH);
     ctx.fillStyle = 'rgba(8,12,18,0.55)';
-    for (const i of [1, 3]) ctx.fillRect(x0 + (total * i) / 4 - 1, hpY, 2, hpH);
+    for (const i of [1, 3]) ctx.fillRect(x0 + (total * i * MAX_HP) / (4 * tot) - 1, hpY, 2, hpH);
+    const hpText = `${Math.ceil(hp)}${sh > 0 ? ` (+${Math.ceil(sh)})` : ''} / ${MAX_HP}`;
     ctx.font = `700 ${12 * s}px ${FONT_B}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 3;
     ctx.strokeStyle = 'rgba(8,12,18,0.85)';
-    ctx.strokeText(`${Math.ceil(hp)} / ${MAX_HP}`, x0 + total / 2, hpY + hpH / 2 + 1);
+    ctx.strokeText(hpText, x0 + total / 2, hpY + hpH / 2 + 1);
     ctx.fillStyle = C.chalk;
-    ctx.fillText(`${Math.ceil(hp)} / ${MAX_HP}`, x0 + total / 2, hpY + hpH / 2 + 1);
+    ctx.fillText(hpText, x0 + total / 2, hpY + hpH / 2 + 1);
 
     // États (étourdi, enraciné...)
     const chips = [];
+    if (t < me.stasisUntil) chips.push(['Stase', me.stasisUntil - t, '#facc15']);
+    if (t < me.markUntil) chips.push(['Marqué', me.markUntil - t, '#fb923c']);
     if (t < me.stunUntil) chips.push(['Étourdi', me.stunUntil - t, '#fde68a']);
     if (t < me.rootUntil) chips.push(['Enraciné', me.rootUntil - t, '#c084fc']);
     if (t < me.slowUntil) chips.push([`Ralenti ${Math.round(me.slowAmt * 100)} %`, me.slowUntil - t, '#93c5fd']);
@@ -937,7 +979,7 @@ export class Renderer {
       const ok = allowed.includes(slot);
       const ready = me.cds[slot] || 0;
       const remain = Math.max(0, ready - t);
-      const blocked = t < me.stunUntil || ((ab.kind === 'dash' || ab.kind === 'blink') && t < me.rootUntil) || !me.alive;
+      const blocked = t < me.stunUntil || t < me.stasisUntil || ((ab.kind === 'dash' || ab.kind === 'blink') && t < me.rootUntil) || !me.alive;
       this.drawSlot(ctx, x, y0, size, slot, ab, ok, remain, blocked, s);
       x += size + gap;
     });
@@ -1089,7 +1131,7 @@ export class Renderer {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    const cx = this.w / 2, cy = this.oy + (ARENA_H * this.scale) * 0.42;
+    const cx = this.w / 2, cy = this.oy + (this.ah * this.scale) * 0.42;
     if (phase.name === 'countdown' && view.rules) {
       const rem = view.rules.playAt - t;
       if (rem > 0) {
@@ -1297,6 +1339,31 @@ export function drawAbilityIcon(ctx, id, cx, cy, r) {
       line(-0.9, -0.9, 0.05, 0.05);
       line(-0.4, -1, 0.3, -0.3);
       line(-1, -0.4, -0.3, 0.3);
+      break;
+    case 'javelot':
+      line(-1, 1, 0.6, -0.6);
+      tri(1, -1, 0.25, -0.85, 0.85, -0.25);
+      break;
+    case 'flux':
+      circle(0.25, -0.25, 0.3, true);
+      circle(0.25, -0.25, 0.65, false);
+      line(-1, 1, -0.3, 0.3);
+      break;
+    case 'stase':
+      ctx.beginPath();
+      ctx.moveTo(-0.6 * r, -0.85 * r);
+      ctx.lineTo(0.6 * r, -0.85 * r);
+      ctx.lineTo(-0.6 * r, 0.85 * r);
+      ctx.lineTo(0.6 * r, 0.85 * r);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    case 'barrage':
+      for (const k of [-0.6, 0, 0.6]) {
+        ctx.beginPath();
+        ctx.arc((k - 1.1) * r, 0, 1.2 * r, -0.75, 0.75);
+        ctx.stroke();
+      }
       break;
     case 'flash':
       star(4, 0.28);

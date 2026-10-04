@@ -2,7 +2,7 @@
 
 import { Match } from '../shared/match.js';
 import {
-  MODES, PLAYER_COLORS, SNAPSHOT_EVERY, DT, MAX_NAME, MAX_CHAT, SLOTS, ARENA_W, ARENA_H,
+  MODES, PLAYER_COLORS, SNAPSHOT_EVERY, DT, MAX_NAME, MAX_CHAT, SLOTS,
 } from '../shared/constants.js';
 import { botName, BOT_LEVELS } from '../shared/bot.js';
 import { sanitizeBuild, randomBuild } from '../shared/abilities.js';
@@ -430,15 +430,16 @@ class Room {
     const seq = Number.isInteger(m.s) ? m.s : 0;
     const t = Number(m.t);
     const fx = Number(m.x), fy = Number(m.y);
+    const { w, h } = match.rules;
     let cmd = null;
     if (m.k === 'move' && Number.isFinite(fx) && Number.isFinite(fy)) {
-      cmd = { k: 'move', x: clamp(fx, -200, ARENA_W + 200), y: clamp(fy, -200, ARENA_H + 200) };
+      cmd = { k: 'move', x: clamp(fx, -200, w + 200), y: clamp(fy, -200, h + 200) };
     } else if (m.k === 'stop') {
       cmd = { k: 'stop' };
     } else if (m.k === 'attack' && typeof m.id === 'string' && m.id.length < 24) {
       cmd = { k: 'attack', id: m.id };
     } else if (m.k === 'cast' && SLOTS.includes(m.slot) && Number.isFinite(fx) && Number.isFinite(fy)) {
-      cmd = { k: 'cast', slot: m.slot, x: clamp(fx, -2000, ARENA_W + 2000), y: clamp(fy, -2000, ARENA_H + 2000) };
+      cmd = { k: 'cast', slot: m.slot, x: clamp(fx, -2000, w + 2000), y: clamp(fy, -2000, h + 2000) };
     }
     if (cmd) match.queueInput(c.id, seq, t, cmd);
   }
