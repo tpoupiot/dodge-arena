@@ -2,7 +2,7 @@
 
 import { Match } from '../match.js';
 import { SLOTS } from '../constants.js';
-import { createPlayer } from '../sim.js';
+import { createPlayer, packMob } from '../sim.js';
 import { EnvSpawner } from '../spawner.js';
 import { round2 } from '../util.js';
 import { generateRun, TRAPS, doorZone, entryPoints, ROOMS_PER_CHAPTER, SPAWN_WARN } from './rooms.js';
@@ -60,6 +60,14 @@ export class StoryMatch extends Match {
   // Demande aux clients d'afficher un texte de l'histoire (clé de SCRIPT).
   say(k) {
     this.emit({ e: 'say', k, t: this.time });
+  }
+
+  // Les ennemis vivants voyagent dans les snapshots, en version compacte.
+  snapshot() {
+    const snap = super.snapshot();
+    snap.m = [];
+    for (const u of this.mobs.values()) if (u.alive) snap.m.push(packMob(u, this.time));
+    return snap;
   }
 
   // ------------------------------------------------------------ salles

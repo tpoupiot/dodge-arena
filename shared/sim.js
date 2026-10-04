@@ -372,6 +372,26 @@ export function unpackInto(o, p) {
   return p;
 }
 
+// Version compacte d'un ennemi du mode histoire : un tableau de 17 valeurs, dans cet ordre.
+export function packMob(p, t) {
+  return [
+    p.id, round2(p.x), round2(p.y), p.mv ? 1 : 0, round2(p.tx), round2(p.ty),
+    Math.round(p.ang * 1000) / 1000, p.hp,
+    tm(p.castUntil, t), p.castDur, tm(p.stunUntil, t), tm(p.rootUntil, t),
+    tm(p.slowUntil, t), p.slowAmt, tm(p.markUntil, t), p.markUntil > t ? p.markBy : 0,
+    p.dash ? [p.dash.k, round2(p.dash.fx), round2(p.dash.fy), round2(p.dash.tx), round2(p.dash.ty), p.dash.ts, p.dash.te] : 0,
+  ];
+}
+
+export function unpackMob(a, p) {
+  p.x = a[1]; p.y = a[2]; p.mv = !!a[3]; p.tx = a[4]; p.ty = a[5]; p.ang = a[6]; p.hp = a[7];
+  p.castUntil = a[8]; p.castDur = a[9]; p.stunUntil = a[10]; p.rootUntil = a[11];
+  p.slowUntil = a[12]; p.slowAmt = a[13]; p.markUntil = a[14]; p.markBy = a[15] || null;
+  const d = a[16];
+  p.dash = d ? { k: d[0], fx: d[1], fy: d[2], tx: d[3], ty: d[4], ts: d[5], te: d[6] } : null;
+  return p;
+}
+
 const SPELL_FIELDS = {
   line: ['ox', 'oy', 'dx', 'dy', 'speed', 'range', 'radius', 'tl', 'ret', 'pierce'],
   circle: ['x', 'y', 'r', 'tl', 'td'],
@@ -383,6 +403,8 @@ const SPELL_FIELDS = {
 // Version allégée d'un sort pour le réseau (les infos serveur comme les cibles touchées restent sur le serveur).
 export function packSpell(s) {
   const o = { id: s.id, kind: s.kind, def: s.def, owner: s.owner, t0: s.t0, fx: s.fx || '' };
+  // Mode histoire : l'équipe du sort, quand elle diffère de son lanceur, sert à prédire les impacts côté client.
+  if (s.team != null && s.team !== s.owner) o.team = s.team;
   for (const k of SPELL_FIELDS[s.kind]) {
     const v = s[k];
     if (v === undefined) continue;

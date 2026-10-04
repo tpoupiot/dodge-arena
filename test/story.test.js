@@ -844,3 +844,35 @@ test('narration : les textes arrivent aux moments prévus', () => {
   while (!m.over) nextRoom(m);
   assert.deepEqual(says(), ['intro', 'boss1', 'boss1p3', 'boss1end', 'ch2', 'boss2', 'boss2end', 'ch3', 'boss3']);
 });
+
+// ---------------------------------------------------------------- réseau
+
+import { packMob, unpackMob, packSpell } from '../shared/sim.js';
+
+test('réseau : état compact d\'un ennemi, snapshot, équipe des sorts', () => {
+  const m = solo(1);
+  stepUntil(m, () => m.mobs.size > 0);
+  const u = [...m.mobs.values()][0];
+  u.hp = 17; u.stunUntil = m.time + 1; u.markUntil = m.time + 2; u.markBy = 'a';
+  u.dash = { k: 'dash', fx: 1, fy: 2, tx: 3, ty: 4, ts: m.time, te: m.time + 0.3 };
+  const a = packMob(u, m.time);
+  assert.equal(a.length, 17);
+  assert.equal(a[0], u.id);
+  const copy = unpackMob(a, createPlayer(mobDef(u.id, u.mob), 0));
+  const r2 = (v) => Math.round(v * 100) / 100;
+  for (const k of ['x', 'y', 'tx', 'ty']) assert.equal(copy[k], r2(u[k]), k);
+  for (const k of ['mv', 'hp', 'castUntil', 'castDur', 'stunUntil', 'rootUntil', 'slowUntil', 'slowAmt', 'markUntil', 'markBy']) {
+    assert.equal(copy[k], u[k], k);
+  }
+  assert.deepEqual(copy.dash, u.dash);
+  const snap = m.snapshot();
+  assert.equal(snap.p.length, 1);
+  assert.equal(snap.m.length, m.mobs.size);
+  u.alive = false;
+  assert.equal(m.snapshot().m.length, m.mobs.size - 1, 'seuls les ennemis vivants sont envoyés');
+  // L'équipe d'un sort n'est envoyée que si elle diffère de son lanceur.
+  const spell = { kind: 'circle', def: 'w', target: null, t0: 0, tl: 0, td: 9, x: 0, y: 0, r: 1, dmg: 0, fx: '' };
+  assert.equal(packSpell(m.addSpell({ ...spell, owner: 'a' })).team, 'P');
+  assert.equal(packSpell(m.addSpell({ ...spell, owner: null })).team, 'M');
+  assert.equal(packSpell({ ...spell, id: 1, owner: 'a', team: 'a' }).team, undefined, 'versus : rien de plus sur le réseau');
+});

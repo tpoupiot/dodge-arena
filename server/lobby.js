@@ -7,6 +7,8 @@ import {
 import { botName, BOT_LEVELS } from '../shared/bot.js';
 import { sanitizeBuild, randomBuild } from '../shared/abilities.js';
 import { clamp } from '../shared/util.js';
+import { StoryMatch } from '../shared/story/match.js';
+import { STORY_COLORS } from '../shared/story/loot.js';
 
 export const serverNow = () => performance.now() / 1000;
 
@@ -15,6 +17,8 @@ const ENV_LEVELS = ['off', 'leger', 'normal', 'chaos'];
 const ROUND_OPTIONS = [1, 2, 3, 5];
 const MAX_ROOMS = 500;
 const MSG_PER_SEC = 150;
+const STORY_MODE = 'story';   // salon coop du mode histoire : 1 à 3 joueurs, pas d'IA, pas de réglages
+const STORY_CAPACITY = 3;
 
 let nextId = 1;
 const newId = (prefix) => prefix + (nextId++).toString(36);
@@ -209,7 +213,7 @@ export class Lobby {
       code = '';
       for (let i = 0; i < 4; i++) code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
     } while (this.rooms.has(code));
-    const room = new Room(this, code, MODES[mode] ? mode : '1v1', fromQueue);
+    const room = new Room(this, code, mode === STORY_MODE || MODES[mode] ? mode : '1v1', fromQueue);
     this.rooms.set(code, room);
     return room;
   }
@@ -257,8 +261,12 @@ class Room {
     this.botCount = 0;
   }
 
+  get story() {
+    return this.settings.mode === STORY_MODE;
+  }
+
   get capacity() {
-    return MODES[this.settings.mode];
+    return this.story ? STORY_CAPACITY : MODES[this.settings.mode];
   }
 
   humans() {
@@ -284,7 +292,7 @@ class Room {
       state: this.state,
       fromQueue: this.fromQueue,
       players: list.map((m, i) => ({
-        id: m.id, name: m.name, ready: m.ready, bot: m.bot, botLevel: m.botLevel || '', color: PLAYER_COLORS[i],
+        id: m.id, name: m.name, ready: m.ready, bot: m.bot, botLevel: m.botLevel || '', color: (this.story ? STORY_COLORS : PLAYER_COLORS)[i],
       })),
     });
   }
@@ -327,7 +335,7 @@ class Room {
   }
 
   updateSettings(c, s) {
-    if (!this.isHost(c) || this.state !== 'lobby') return;
+    if (!this.isHost(c) || this.state !== 'lobby' || this.story) return;
     const next = { ...this.settings };
     if (MODES[s.mode]) next.mode = s.mode;
     if (ROUND_OPTIONS.includes(s.roundsToWin)) next.roundsToWin = s.roundsToWin;
@@ -349,6 +357,7 @@ class Room {
 
   addBot(c, level) {
     if (!this.isHost(c) || this.state !== 'lobby') return;
+    if (this.story) return c.send({ type: 'error', msg: 'Pas d\'IA en mode histoire.' });
     if (this.members.size >= this.capacity) return c.send({ type: 'error', msg: 'Le salon est déjà complet.' });
     const id = newId('b');
     const botLevel = BOT_LEVELS[level] ? level : 'normal';
@@ -375,26 +384,36 @@ class Room {
     this.broadcast({ type: 'chat', id: c.id, name: c.name, text });
   }
 
+  // Versus : le salon doit être plein. Histoire : il suffit que tous les présents soient prêts.
   maybeStart() {
-    if (this.state !== 'lobby' || this.members.size !== this.capacity) return;
+    if (this.state !== 'lobby') return;
+    if (this.story ? this.members.size < 1 : this.members.size !== this.capacity) return;
     for (const m of this.members.values()) if (!m.ready) return;
     this.startMatch();
   }
 
   startMatch() {
-    const players = [...this.members.values()].map((m, i) => ({
-      id: m.id, name: m.name, color: PLAYER_COLORS[i], bot: m.bot, botLevel: m.botLevel,
-      build: m.bot ? randomBuild() : m.client.build,
-    }));
-    this.match = new Match({
-      kind: 'versus',
-      players,
-      settings: { roundsToWin: this.settings.roundsToWin, env: this.settings.env },
-      time: serverNow(),
-    });
+    let players;
+    if (this.story) {
+      // Pas de build : la partie donne à chacun son équipe, sa couleur et son kit de départ.
+      const heroes = [...this.members.values()].map((m) => ({ id: m.id, name: m.name }));
+      this.match = new StoryMatch({ players: heroes, time: serverNow() });
+      players = this.match.heroDefs;
+    } else {
+      players = [...this.members.values()].map((m, i) => ({
+        id: m.id, name: m.name, color: PLAYER_COLORS[i], bot: m.bot, botLevel: m.botLevel,
+        build: m.bot ? randomBuild() : m.client.build,
+      }));
+      this.match = new Match({
+        kind: 'versus',
+        players,
+        settings: { roundsToWin: this.settings.roundsToWin, env: this.settings.env },
+        time: serverNow(),
+      });
+    }
     this.state = 'ingame';
     this.ticks = 0;
-    this.broadcast({ type: 'start', players, settings: this.settings, t: this.match.time });
+    this.broadcast({ type: 'start', kind: this.story ? 'story' : 'versus', players, settings: this.settings, t: this.match.time });
     this.broadcastRoom();
   }
 
@@ -414,8 +433,7 @@ class Room {
   }
 
   sendSnapshot() {
-    const snap = this.match.snapshot();
-    this.broadcast({ type: 's', t: snap.t, p: snap.p, e: this.match.drainEvents() });
+    this.broadcast({ type: 's', ...this.match.snapshot(), e: this.match.drainEvents() });
   }
 
   endMatch() {
@@ -441,6 +459,8 @@ class Room {
     } else if (m.k === 'cast' && SLOTS.includes(m.slot) && Number.isFinite(fx) && Number.isFinite(fy)) {
       cmd = { k: 'cast', slot: m.slot, x: clamp(fx, -2000, w + 2000), y: clamp(fy, -2000, h + 2000) };
     }
+    // Choix au coffre du mode histoire : indice de carte, ou -1 pour passer.
+    if (m.k === 'loot' && Number.isInteger(m.i) && m.i >= -1 && m.i <= 2) cmd = { k: 'loot', i: m.i };
     if (cmd) match.queueInput(c.id, seq, t, cmd);
   }
 }

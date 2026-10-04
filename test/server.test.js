@@ -140,3 +140,77 @@ test('les messages invalides sont ignorés sans faire tomber le serveur', async 
   assert.equal(pong.c, 1);
   ws.close();
 });
+
+// ---------------------------------------------------------------- mode histoire
+
+test('salon histoire : trois places, pas d\'IA, démarre quand les présents sont prêts', async () => {
+  const a = await player('Ana');
+  a.send({ type: 'create', mode: 'story' });
+  const room = await a.waitType('room');
+  assert.equal(room.settings.mode, 'story');
+  a.send({ type: 'addBot', level: 'normal' });
+  assert.match((await a.waitType('error')).msg, /IA/);
+  a.send({ type: 'settings', mode: '1v1', roundsToWin: 5, env: 'chaos' });
+  const b = await player('Bea');
+  b.send({ type: 'join', code: room.code });
+  const r2 = await b.waitType('room', 2000, (m) => m.players.length === 2);
+  assert.equal(r2.settings.mode, 'story', 'les réglages d\'un salon histoire ne changent pas');
+  assert.equal(r2.settings.roundsToWin, 2);
+  a.send({ type: 'ready', v: true });
+  b.send({ type: 'ready', v: true });
+  const start = await b.waitType('start', 2000);
+  assert.equal(start.kind, 'story');
+  assert.equal(start.players.length, 2);
+  for (const p of start.players) {
+    assert.equal(p.team, 'P');
+    assert.deepEqual(p.loadout.build, { Q: 'trait', W: null, E: null, R: null, D: null, F: null });
+  }
+  assert.notEqual(start.players[0].color, start.players[1].color);
+  const snap = await b.waitType('s', 2000);
+  assert.ok(Array.isArray(snap.m));
+  assert.equal(snap.e.find((e) => e.e === 'room').i, 0);
+  assert.ok(snap.e.some((e) => e.e === 'warn'));
+  // Commandes de butin malformées ou sans tirage : ignorées, le serveur reste disponible.
+  for (const i of [0, 7, -5, 1.5, 'x', null]) b.send({ type: 'in', s: 1, t: 0, k: 'loot', i });
+  b.send({ type: 'ping', c: 5 });
+  assert.equal((await b.waitType('pong', 2000, (m) => m.c === 5)).c, 5);
+  // Les ennemis arrivent dans les snapshots après le décompte.
+  const withMobs = await a.waitFor((m) => m.type === 's' && m.m && m.m.length > 0, 8000, 'ennemis');
+  assert.equal(withMobs.m[0].length, 17);
+  // Un joueur part : la run continue pour l'autre.
+  b.close();
+  await a.waitFor((m) => m.type === 's' && m.e.some((e) => e.e === 'left'), 3000, 'left');
+  a.clear();
+  const later = await a.waitType('s', 2000);
+  assert.ok(!later.e.some((e) => e.e === 'storyEnd'));
+  a.send({ type: 'leave' });
+});
+
+test('salon histoire : un joueur seul lance la run ; pas de partie rapide', async () => {
+  const a = await player('Solo');
+  a.send({ type: 'queue', mode: 'story' });
+  a.send({ type: 'ping', c: 9 });
+  await a.waitType('pong', 2000, (m) => m.c === 9);
+  assert.ok(!a.msgs.some((m) => m.type === 'queue'), 'la file rapide refuse le mode histoire');
+  a.send({ type: 'create', mode: 'story' });
+  assert.equal((await a.waitType('room')).players.length, 1);
+  a.send({ type: 'ready', v: true });
+  const start = await a.waitType('start', 2000);
+  assert.equal(start.kind, 'story');
+  assert.equal(start.players.length, 1);
+  a.send({ type: 'leave' });
+});
+
+test('un salon versus annonce son type au démarrage', async () => {
+  const a = await player('V1'), b = await player('V2');
+  a.send({ type: 'create', mode: '1v1' });
+  const room = await a.waitType('room');
+  b.send({ type: 'join', code: room.code });
+  await b.waitType('room');
+  a.send({ type: 'ready', v: true });
+  b.send({ type: 'ready', v: true });
+  const start = await a.waitType('start', 2000);
+  assert.equal(start.kind, 'versus');
+  assert.equal((await a.waitType('s', 2000)).m, undefined);
+  for (const x of [a, b]) x.send({ type: 'leave' });
+});
