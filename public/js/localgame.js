@@ -5,19 +5,26 @@ import { DT, PLAYER_COLORS } from '../../shared/constants.js';
 import { extrapolate, spellEnd } from '../../shared/sim.js';
 import { botName } from '../../shared/bot.js';
 import { randomBuild } from '../../shared/abilities.js';
+import { StoryMatch } from '../../shared/story/match.js';
+import { StoryState } from '../../shared/story/state.js';
 
 export class LocalGame {
-  // kind : 'survival' | 'versus' ; bots : nombre d'IA adverses ; demo : une IA joue seule (fond du menu)
+  // kind : 'survival' | 'versus' | 'story' ; bots : nombre d'IA adverses ; demo : une IA joue seule (fond du menu)
   constructor({ kind, name = 'Toi', settings = {}, bots = 0, botLevel = 'normal', demo = false, seed, build }) {
     this.kind = kind;
     this.you = demo ? null : 'you';
-    const players = [];
-    if (demo) players.push({ id: 'demo', name: 'IA', color: PLAYER_COLORS[0], bot: true, botLevel: 'difficile' });
-    else players.push({ id: 'you', name, color: PLAYER_COLORS[0], build });
-    for (let i = 0; i < bots; i++) {
-      players.push({ id: 'b' + i, name: botName(i), color: PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length], bot: true, botLevel, build: randomBuild() });
+    if (kind === 'story') {
+      this.match = new StoryMatch({ players: [{ id: 'you', name }], time: 0, seed });
+    } else {
+      const players = [];
+      if (demo) players.push({ id: 'demo', name: 'IA', color: PLAYER_COLORS[0], bot: true, botLevel: 'difficile' });
+      else players.push({ id: 'you', name, color: PLAYER_COLORS[0], build });
+      for (let i = 0; i < bots; i++) {
+        players.push({ id: 'b' + i, name: botName(i), color: PLAYER_COLORS[(i + 1) % PLAYER_COLORS.length], bot: true, botLevel, build: randomBuild() });
+      }
+      this.match = new Match({ kind, players, settings, time: 0, seed });
     }
-    this.match = new Match({ kind, players, settings, time: 0, seed });
+    this.story = kind === 'story' ? new StoryState(this.you) : null;
     this.settings = this.match.settings;
     this.acc = 0;
     this.last = null;
@@ -40,7 +47,15 @@ export class LocalGame {
   // Tient à jour la liste des sorts affichés et la phase de jeu à partir des événements.
   absorb(events) {
     for (const ev of events) {
+      if (this.story) this.story.apply(ev);
       switch (ev.e) {
+        case 'room':
+          this.spells.clear();
+          this.phase = { name: 'countdown', round: ev.i + 1, scores: {}, winner: null };
+          break;
+        case 'storyEnd':
+          this.phase = { ...this.phase, name: 'over' };
+          break;
         case 'round':
           this.spells.clear();
           this.phase = { name: 'countdown', round: ev.round, scores: ev.scores, winner: null };
@@ -103,7 +118,7 @@ export class LocalGame {
         x: e.x, y: e.y, st: p, isYou: id === this.you, alive: p.alive, hp: p.hp,
       };
     });
-    return {
+    const view = {
       t,
       kind: this.kind,
       rules: m.rules,
@@ -114,5 +129,14 @@ export class LocalGame {
       spells: [...this.spells.values()],
       roundsToWin: this.settings.roundsToWin,
     };
+    if (this.story) {
+      this.story.prune(t);
+      view.story = this.story;
+      view.mobs = [...m.mobs.values()].map((u) => {
+        const e = extrapolate(u, m.time, this.acc, m.rules);
+        return { id: u.id, name: u.name, color: u.color, x: e.x, y: e.y, st: u, alive: u.alive, hp: u.hp };
+      });
+    }
+    return view;
   }
 }
