@@ -1,7 +1,8 @@
 # Dodge Arena
 
-Jeu d'esquive de sorts dans le navigateur, avec les contrôles de League of Legends : clic droit pour bouger, Q W E R pour les sorts, Flash sur D. Trois façons de jouer :
+Jeu d'esquive de sorts dans le navigateur, avec les contrôles de League of Legends : clic droit pour bouger, Q W E R pour les sorts, Flash sur D. Quatre façons de jouer :
 
+- **Histoire** : descends sous l'Arène de salle en salle, bats trois boss et retrouve tes sorts dans des coffres. Seul hors ligne, ou à deux ou trois en coop en ligne.
 - **Survie** : seul face aux sorts de l'arène, qui arrivent de plus en plus vite.
 - **Contre l'IA** : duel hors ligne en 1v1 ou 1v1v1.
 - **En ligne** : 1v1 ou 1v1v1 contre des amis (salon privé avec code) ou en partie rapide. L'hôte peut compléter un salon avec des IA.
@@ -55,6 +56,17 @@ Les touches suivent leur position sur le clavier, comme dans LoL : sur un clavie
 
 Le build est envoyé au serveur et s'applique dès la partie suivante. Les IA tirent un build au hasard. En survie, seuls E, D et F servent.
 
+## Mode histoire
+
+Une run compte 15 salles : trois chapitres de quatre salles de combat et un boss. Les salles, les ennemis et le butin sont tirés au hasard à chaque partie. Si tu meurs, la run recommence du début.
+
+- **Kit** : tu pars avec le seul Trait arcanique sur Q. Le build du menu ne sert pas.
+- **Coffres** : chaque salle vidée fait apparaître un coffre. Il propose trois sorts : tu en gardes un, ou tu passes pour récupérer 30 PV.
+- **Rareté** : Commun, Rare, Épique ou Légendaire. Plus un sort est rare, plus il frappe fort et plus il se recharge vite. Retrouver un sort en plus rare l'améliore.
+- **Salles** : elles changent de taille, de décor, d'ennemis et de pièges. Une fois la salle vidée, la porte s'ouvre sur un côté.
+- **Boss** : le Gardien de pierre, la Forgeronne des braises et l'Archonte du Vide ont chacun leurs attaques et trois phases. Les battre te soigne entièrement.
+- **Coop** : « Créer un salon coop » ouvre un salon de une à trois places. Chacun a son tirage au coffre, il n'y a pas de tir allié, et un joueur mort revient à la salle suivante avec la moitié de ses PV.
+
 ## Comment ça marche
 
 - Le serveur fait autorité : il simule la partie 60 fois par seconde et envoie 30 snapshots par seconde.
@@ -67,7 +79,9 @@ Le build est envoyé au serveur et s'applique dès la partie suivante. Les IA ti
 ```
 server/   serveur HTTP + WebSocket, salons, file d'attente
 shared/   simulation commune : règles, sorts, IA, parties
+shared/story/   mode histoire : salles, ennemis, boss, butin, textes
 public/   client : rendu canvas, contrôles, menus, réseau
+tools/    pilote scripté et simulation d'équilibrage
 test/     tests (npm test)
 ```
 
@@ -75,7 +89,8 @@ Pour rééquilibrer le jeu :
 
 - sorts disponibles, dégâts, portées, recharges et auto-attaque : `shared/abilities.js` (un sort ajouté là apparaît automatiquement dans l'écran de build) ;
 - fréquence des sorts de l'arène par difficulté : `shared/spawner.js` ;
-- vitesse, taille de l'arène (de base et à 3 joueurs) et durée avant la mort subite : `shared/constants.js`.
+- vitesse, taille de l'arène (de base et à 3 joueurs) et durée avant la mort subite : `shared/constants.js` ;
+- mode histoire : ennemis dans `shared/story/mobs.js`, boss dans `shared/story/bosses.js`, salles, vagues et pièges dans `shared/story/rooms.js`, raretés des coffres dans `shared/story/loot.js`. `node tools/balance.js` simule des runs et affiche la durée et les dégâts subis par salle.
 
 ## Tests
 
@@ -83,7 +98,7 @@ Pour rééquilibrer le jeu :
 npm test
 ```
 
-Les tests couvrent les règles de jeu, des parties complètes entre IA, le serveur (salons, file rapide, IA, abandon, messages invalides) et la prédiction réseau avec une latence simulée.
+Les tests couvrent les règles de jeu, des parties complètes entre IA, le mode histoire (butin, salles, ennemis, boss, une run complète jouée par un pilote scripté), le rendu sur un canvas simulé, le serveur (salons, file rapide, IA, coop, abandon, messages invalides) et la prédiction réseau avec une latence simulée.
 
 ---
 
