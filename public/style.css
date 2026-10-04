@@ -703,6 +703,23 @@ input[type="text"]:focus {
   vertical-align: -1px;
 }
 
+/* Sorts du kit en fin de run (mode histoire) */
+.res-kit {
+  display: flex;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.res-kit:empty {
+  display: none;
+}
+
+.res-kit canvas {
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--line-hi);
+}
+
 .panel .button-row {
   margin-top: 22px;
 }

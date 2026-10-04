@@ -10,7 +10,7 @@ import {
   settings, saveSettings, resetBinds, ACTIONS, keyLabel, loadKeyboardLayout, formatTime,
 } from './settings.js';
 import { ABILITIES, ENV_SPELLS, spellName, abilityOf, poolFor, sanitizeBuild, BUILD_SLOTS, AUTO, describe, RARITIES } from '../../shared/abilities.js';
-import { storyBestLine, renderOffer } from './story-ui.js';
+import { storyBestLine, saveStoryRecord, renderOffer, fillStoryResults } from './story-ui.js';
 import { HOSTILE } from './render-story.js';
 import { ENV_COLOR, MODES, PLAYER_RADIUS } from '../../shared/constants.js';
 import { linePos } from '../../shared/sim.js';
@@ -645,6 +645,7 @@ function showSurvivalResults(survived, dodges, record, prev) {
     ? `Nouveau record en difficulté ${label}.`
     : `Ton record en difficulté ${label} : ${formatTime(prev)}.`;
   $('#res-table').textContent = '';
+  $('#res-kit').textContent = '';
   $('#res-hint').textContent = `${dodges} sort${dodges > 1 ? 's' : ''} esquivé${dodges > 1 ? 's' : ''}. Espace pour rejouer.`;
   $('#res-again').textContent = 'Rejouer';
   $('#res-menu').textContent = 'Menu';
@@ -679,6 +680,7 @@ function showVersusResults(ev, players) {
 
   const table = $('#res-table');
   table.textContent = '';
+  $('#res-kit').textContent = '';
   const head = document.createElement('tr');
   for (const [txt, num] of [['Joueur', false], ['Manches', true], ['Éliminations', true], ['Dégâts', true], ['Précision', true]]) {
     const th = document.createElement('th');
@@ -717,6 +719,14 @@ function showVersusResults(ev, players) {
   showOverlay('results');
 }
 
+function showStoryResults(ev, players) {
+  fillStoryResults(ev, players, sessionType === 'online' ? online.id : 'you', iconCanvas);
+  $('#res-again').textContent = 'Rejouer';
+  $('#res-menu').textContent = 'Menu';
+  $('#res-hint').textContent = '';
+  showOverlay('results');
+}
+
 function updateRematchHint() {
   if (sessionType !== 'online' || !lastRoom) return;
   const others = lastRoom.players.filter((p) => p.id !== online.id && !p.bot);
@@ -736,6 +746,7 @@ function initResults() {
     hideOverlay('results');
     if (sessionType === 'survival') startSurvival();
     else if (sessionType === 'bots') startBots();
+    else if (sessionType === 'story') startStory();
     else if (sessionType === 'online') {
       const full = lastRoom && lastRoom.players.length >= MODES[lastRoom.settings.mode];
       if (full) online.ready(true);
@@ -1153,6 +1164,17 @@ function handleEvents(evs) {
           fx.number(p.x, p.y - 30, ABILITIES[ev.ab].name, rar.color, ev.rar >= 2);
         }
         if (ev.id === view.you) sfx.play('pick', 1, ev.rar);
+        break;
+      }
+      case 'storyEnd': {
+        hideOverlay('loot');
+        fx.setBanner(ev.win ? 'Victoire' : 'Défaite', '', ev.win ? '#5ee08f' : '#ef4b54', 2);
+        sfx.play(ev.win ? 'win' : 'lose');
+        saveStoryRecord(ev);
+        $('#story-best').textContent = storyBestLine();
+        const players = view.players.map((p) => ({ id: p.id, name: p.name, color: p.color }));
+        clearTimeout(resultsTimer);
+        resultsTimer = setTimeout(() => showStoryResults(ev, players), 1600);
         break;
       }
       case 'left': {

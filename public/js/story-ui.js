@@ -1,6 +1,7 @@
 // Interface du mode histoire : record, cartes du coffre, résultats de la run.
 
-import { ABILITIES, RARITIES, scaled, describe } from '../../shared/abilities.js';
+import { ABILITIES, RARITIES, BUILD_SLOTS, scaled, describe } from '../../shared/abilities.js';
+import { CHAPTERS } from '../../shared/story/rooms.js';
 import { settings, saveSettings, keyLabel, formatTime } from './settings.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -66,4 +67,56 @@ export function renderOffer(offer, hero, iconCanvas, onPick) {
     ? 'Choisis un sort avec la souris ou les touches 1, 2, 3. Passer rend des PV.'
     : 'Ce coffre n\'a rien de mieux que tes sorts.';
   $('#loot-skip').textContent = `Passer (+${offer.heal} PV)`;
+}
+
+// ------------------------------------------------------------ fin de run
+
+export function storyResultLine(ev) {
+  const s = ev.cleared > 1 ? 's' : '';
+  return `Chapitre ${ev.ch + 1} : ${CHAPTERS[ev.ch].name}, salle ${ev.n} sur 5. ${ev.cleared} salle${s} vidée${s} en ${formatTime(ev.time)}.`;
+}
+
+// Remplit l'écran de résultats. players : [{ id, name, color }], you : id du joueur local.
+export function fillStoryResults(ev, players, you, iconCanvas) {
+  $('#res-title').textContent = ev.win ? 'Victoire' : 'Défaite';
+  $('#res-sub').textContent = storyResultLine(ev);
+  const kit = $('#res-kit');
+  kit.textContent = '';
+  const mine = ev.kits[you];
+  for (const slot of BUILD_SLOTS) {
+    const id = mine && mine.build[slot];
+    if (!id || !ABILITIES[id]) continue;
+    const rar = RARITIES[mine.rar[slot]] || RARITIES[0];
+    const c = iconCanvas(id, slot, 56);
+    c.style.borderColor = rar.color;
+    c.title = `${ABILITIES[id].name} (${rar.name})`;
+    kit.append(c);
+  }
+  const table = $('#res-table');
+  table.textContent = '';
+  const head = document.createElement('tr');
+  for (const [txt, num] of [['Joueur', false], ['Dégâts', true], ['Éliminations', true], ['Morts', true]]) {
+    const th = document.createElement('th');
+    th.textContent = txt;
+    if (num) th.className = 'num';
+    head.append(th);
+  }
+  table.append(head);
+  for (const p of players) {
+    const st = ev.stats[p.id] || { dmg: 0, kills: 0, deaths: 0 };
+    const tr = document.createElement('tr');
+    const name = document.createElement('td');
+    const sw = document.createElement('span');
+    sw.className = 'swatch';
+    sw.style.background = p.color;
+    name.append(sw, p.name + (p.id === you ? ' (toi)' : ''));
+    tr.append(name);
+    for (const v of [Math.round(st.dmg), st.kills, st.deaths]) {
+      const td = document.createElement('td');
+      td.className = 'num';
+      td.textContent = String(v);
+      tr.append(td);
+    }
+    table.append(tr);
+  }
 }

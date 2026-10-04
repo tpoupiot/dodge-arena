@@ -150,3 +150,18 @@ test('carte de coffre : ce que le sort remplace', () => {
   assert.equal(lootReplaceText(hero, { ab: 'trait', rar: 3, slot: 'Q' }), 'Amélioration : Rare → Légendaire');
   assert.equal(lootReplaceText(hero, { ab: 'soin', rar: 2, slot: 'D' }), 'Remplace Flash (Commun)');
 });
+
+// ---------------------------------------------------------------- fin de run
+
+import { storyResultLine } from '../public/js/story-ui.js';
+
+test('résumé de fin de run', () => {
+  assert.equal(
+    storyResultLine({ ch: 1, n: 3, cleared: 7, time: 612.3 }),
+    'Chapitre 2 : La Forge, salle 3 sur 5. 7 salles vidées en 10:12.3.',
+  );
+  assert.equal(
+    storyResultLine({ ch: 0, n: 2, cleared: 1, time: 45 }),
+    'Chapitre 1 : Les Catacombes, salle 2 sur 5. 1 salle vidée en 00:45.0.',
+  );
+});
