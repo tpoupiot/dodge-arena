@@ -37,8 +37,21 @@
     <p class="touch-note" id="touch-note" hidden>Ce jeu se joue au clavier et à la souris.</p>
 
     <div class="modes" id="modes">
-      <section class="mode open" data-mode="survival">
-        <button class="mode-head" aria-expanded="true" aria-controls="mode-survival">
+      <section class="mode open" data-mode="story">
+        <button class="mode-head" aria-expanded="true" aria-controls="mode-story">
+          <span class="mode-title">Histoire</span>
+          <span class="mode-desc">Descends sous l'Arène de salle en salle, bats trois boss et retrouve tes sorts dans les coffres.</span>
+        </button>
+        <div class="mode-body" id="mode-story">
+          <p class="hint" id="story-best"></p>
+          <div class="button-row">
+            <button class="primary" id="play-story">Jouer en solo</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="mode" data-mode="survival">
+        <button class="mode-head" aria-expanded="false" aria-controls="mode-survival">
           <span class="mode-title">Survie</span>
           <span class="mode-desc">Les sorts de l'arène pleuvent de plus en plus vite. Tiens le plus longtemps possible.</span>
         </button>

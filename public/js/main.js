@@ -10,6 +10,8 @@ import {
   settings, saveSettings, resetBinds, ACTIONS, keyLabel, loadKeyboardLayout, formatTime,
 } from './settings.js';
 import { ABILITIES, ENV_SPELLS, spellName, abilityOf, poolFor, sanitizeBuild, BUILD_SLOTS, AUTO, describe } from '../../shared/abilities.js';
+import { storyBestLine } from './story-ui.js';
+import { HOSTILE } from './render-story.js';
 import { ENV_COLOR, MODES, PLAYER_RADIUS } from '../../shared/constants.js';
 import { linePos } from '../../shared/sim.js';
 import { BOT_LEVELS } from '../../shared/bot.js';
@@ -47,6 +49,8 @@ let resultsTimer = null;
 let lastCount = 0;
 let lastMatchEnd = null;
 const hud = { best: 0, dodges: 0, survived: 0 };
+const mobLook = new Map(); // apparence des ennemis du mode histoire, gardée pour les effets de leur mort
+const isStory = () => !!session && session.kind === 'story';
 
 // ------------------------------------------------------------ réseau
 
@@ -84,22 +88,23 @@ const input = new Input(canvas, renderer, {
     else session.input(cmd);
   },
   click: (x, y, attack) => fx.click(x, y, attack),
-  // Ennemi sous le curseur (pour l'auto-attaque au clic droit).
+  // Ennemi sous le curseur (pour l'auto-attaque au clic droit). En mode histoire : un ennemi, jamais un allié.
   pick: (x, y) => {
     if (!session) return null;
     const v = session.view();
-    let best = null, bd = PLAYER_RADIUS + 22;
-    for (const p of v.players) {
+    let best = null, bd = 22;
+    for (const p of v.mobs || v.players) {
       if (p.isYou || !p.alive) continue;
-      const d = Math.hypot(p.x - x, p.y - y);
+      const d = Math.hypot(p.x - x, p.y - y) - (p.st ? p.st.r : PLAYER_RADIUS);
       if (d < bd) { bd = d; best = p.id; }
     }
     return best;
   },
   // Sorts sans visée (boucliers, vitesse, soin...) : toujours lancés à l'appui.
   instant: (slot) => {
-    const ab = abilityOf({ build: settings.build }, slot);
-    return ab && ab.kind === 'buff';
+    const kit = isStory() ? session.view().me : { build: settings.build };
+    const ab = kit && abilityOf(kit, slot);
+    return !!ab && ab.kind === 'buff';
   },
   escape: onEscape,
   enter: onEnter,
@@ -221,6 +226,8 @@ function initMenu() {
 
   $('#play-survival').addEventListener('click', startSurvival);
   $('#play-bots').addEventListener('click', startBots);
+  $('#play-story').addEventListener('click', startStory);
+  $('#story-best').textContent = storyBestLine();
   $('#quick-1v1').addEventListener('click', () => goOnline(() => online.queue('1v1')));
   $('#quick-1v1v1').addEventListener('click', () => goOnline(() => online.queue('1v1v1')));
   $('#create-1v1').addEventListener('click', () => goOnline(() => online.create('1v1')));
@@ -285,6 +292,7 @@ function endSession() {
   session = null;
   sessionType = null;
   fx.clear();
+  mobLook.clear();
 }
 
 function startSurvival() {
@@ -313,6 +321,15 @@ function startBots() {
     settings: { roundsToWin: settings.vsRounds, env: settings.vsEnv },
   });
   sessionType = 'bots';
+  showScreen('game');
+}
+
+function startStory() {
+  sfx.unlock();
+  endSession();
+  hideOverlay('results');
+  session = new LocalGame({ kind: 'story', name: currentName() });
+  sessionType = 'story';
   showScreen('game');
 }
 
@@ -931,8 +948,10 @@ function openHelp() {
 
 // ------------------------------------------------------------ événements de jeu → effets et sons
 
+// Joueur ou, en mode histoire, ennemi.
 function playerById(view, id) {
-  return view ? view.players.find((p) => p.id === id) : null;
+  if (!view) return null;
+  return view.players.find((p) => p.id === id) || (view.mobs && view.mobs.find((p) => p.id === id)) || null;
 }
 
 function handleEvents(evs) {
@@ -946,20 +965,21 @@ function handleEvents(evs) {
         break;
       case 'go':
         sfx.play('go');
-        fx.setBanner(sessionType === 'survival' ? 'Survivez' : 'Combattez', '', '#e9eef3', 0.9);
+        if (!isStory()) fx.setBanner(sessionType === 'survival' ? 'Survivez' : 'Combattez', '', '#e9eef3', 0.9);
         break;
       case 'hit': {
         const target = playerById(view, ev.tid);
         const owner = ev.by ? playerById(view, ev.by) : null;
-        const color = owner ? owner.color : ENV_COLOR;
+        const color = owner ? owner.color : view.story ? HOSTILE : ENV_COLOR;
         fx.burst(ev.x, ev.y, color, 16, 300, 0.4, 4);
         fx.ring(ev.x, ev.y, color, 8, 54, 0.25, 4);
         const isMe = ev.tid === view.you;
         if (target && ev.fx === 'block') fx.number(target.x, target.y - 20, 'Bloqué', '#fde68a');
         if (target && ev.fx === 'mark') fx.number(target.x, target.y - 20, 'Marqué', '#fb923c');
         if (target && ev.fx === 'pop') fx.ring(target.x, target.y, color, 30, 130, 0.35, 7);
-        if (target && ev.dmg > 0) {
-          fx.number(target.x, target.y - 20, `-${ev.dmg}`, isMe ? '#ff6b6b' : ev.by === view.you ? '#fde68a' : '#e9eef3', ev.dmg >= 25);
+        if (ev.dmg > 0) {
+          const at = target || { x: ev.x, y: ev.y };
+          fx.number(at.x, at.y - 20, `-${ev.dmg}`, isMe ? '#ff6b6b' : ev.by === view.you ? '#fde68a' : '#e9eef3', ev.dmg >= 25);
         }
         if (isMe) {
           sfx.play('hurt');
@@ -970,13 +990,25 @@ function handleEvents(evs) {
         break;
       }
       case 'die': {
+        const mob = mobLook.get(ev.id);
+        if (mob) {
+          // Ennemi du mode histoire : éclat à sa couleur, pas de message.
+          fx.burst(ev.x, ev.y, mob.color, mob.boss ? 60 : 22, mob.boss ? 520 : 340, mob.boss ? 1 : 0.5, 5);
+          fx.ring(ev.x, ev.y, mob.color, mob.r * 0.5, mob.r * (mob.boss ? 4 : 2.4), mob.boss ? 0.7 : 0.35, 6);
+          sfx.play('die', mob.boss ? 1 : 0.45);
+          if (mob.boss) fx.shake(14);
+          mobLook.delete(ev.id);
+          break;
+        }
         const victim = playerById(view, ev.id);
         const color = victim ? victim.color : '#e9eef3';
         fx.burst(ev.x, ev.y, color, 44, 460, 0.8, 6);
         fx.ring(ev.x, ev.y, color, 20, 170, 0.5, 8);
         sfx.play('die', ev.id === view.you ? 1 : 0.7);
         if (ev.id === view.you) fx.shake(12);
-        if (sessionType !== 'survival' && victim) {
+        if (isStory()) {
+          if (victim) fx.pushFeed([{ text: victim.name, color }, { text: ' est à terre', color: '#93a1b0' }]);
+        } else if (sessionType !== 'survival' && victim) {
           const killer = ev.by ? playerById(view, ev.by) : null;
           if (killer && killer.id !== ev.id) {
             fx.pushFeed([{ text: killer.name, color: killer.color }, { text: ' a éliminé ', color: '#93a1b0' }, { text: victim.name, color }]);
@@ -1043,6 +1075,40 @@ function handleEvents(evs) {
         resultsTimer = setTimeout(() => showSurvivalResults(ev.survived, ev.dodges, record, prev), 900);
         break;
       }
+      case 'room':
+        fx.clear();
+        lastCount = 0;
+        mobLook.clear();
+        if (ev.i > 0) sfx.play('door');
+        if (ev.type === 'boss') sfx.play('boss');
+        break;
+      case 'spawn':
+        mobLook.set(ev.u.id, { name: ev.u.name, color: ev.u.color, r: ev.u.r, boss: !!ev.u.boss });
+        fx.ring(ev.x, ev.y, ev.u.color, ev.u.r * 2.2, ev.u.r, 0.3, 5);
+        sfx.play('spawn', ev.u.boss ? 1 : 0.5);
+        break;
+      case 'clear':
+        fx.setBanner('Salle vidée', '', '#5ee08f', 1.3);
+        sfx.play('win', 0.6);
+        break;
+      case 'heal': {
+        const p = playerById(view, ev.id);
+        if (p && ev.amt > 0) fx.number(p.x, p.y - 20, `+${ev.amt}`, '#5ee08f');
+        if (ev.amt > 0) sfx.play('buff', 0.6);
+        break;
+      }
+      case 'revive': {
+        const p = playerById(view, ev.id);
+        if (p) fx.ring(p.x, p.y, '#5ee08f', 20, 120, 0.5, 6);
+        sfx.play('buff', 0.8);
+        break;
+      }
+      case 'boss':
+        if (ev.phase > 1) {
+          fx.setBanner(`Phase ${ev.phase}`, '', '#fb7185', 1.1);
+          fx.shake(8);
+        }
+        break;
       case 'left': {
         const p = playerById(view, ev.id);
         if (p) fx.pushFeed([{ text: p.name, color: p.color }, { text: ' a quitté la partie', color: '#93a1b0' }]);
@@ -1058,8 +1124,8 @@ function timedEffects(view, f, withSound) {
   const me = view.players.find((p) => p.isYou);
   const vol = (x, y) => (me ? Math.max(0.3, 1 - Math.hypot(x - me.x, y - me.y) / 1500) : 0.5);
   const colorOf = (owner) => {
-    const p = owner && view.players.find((x) => x.id === owner);
-    return p ? p.color : ENV_COLOR;
+    const p = owner && playerById(view, owner);
+    return p ? p.color : view.story ? HOSTILE : ENV_COLOR;
   };
   for (const s of view.spells) {
     if (s.kind === 'line') {
@@ -1124,7 +1190,7 @@ function frame(ms) {
     if (evs && evs.length) handleEvents(evs);
     if (!session) return requestAnimationFrame(frame);
     const view = session.view();
-    if (view.phase.name === 'countdown' && view.rules) {
+    if (view.phase.name === 'countdown' && view.rules && view.kind !== 'story') {
       const n = Math.ceil(view.rules.playAt - view.t);
       if (n !== lastCount && n > 0 && n <= 3) sfx.play('tick');
       lastCount = n;

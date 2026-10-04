@@ -115,3 +115,24 @@ test('les autres modes de la partie locale ne changent pas', () => {
   assert.equal(v.story, undefined);
   assert.equal(v.mobs, undefined);
 });
+
+// ---------------------------------------------------------------- record
+
+import { settings } from '../public/js/settings.js';
+import { storyBestLine, saveStoryRecord } from '../public/js/story-ui.js';
+
+test('record du mode histoire', () => {
+  assert.deepEqual(settings.story, { bestRooms: 0, wins: 0, bestTime: 0 });
+  assert.equal(storyBestLine(), 'Aucune descente pour l\'instant.');
+  saveStoryRecord({ win: false, cleared: 1, time: 60 });
+  assert.equal(storyBestLine(), 'Meilleure descente : 1 salle sur 15.');
+  saveStoryRecord({ win: false, cleared: 4, time: 300 });
+  saveStoryRecord({ win: false, cleared: 2, time: 90 });
+  assert.equal(settings.story.bestRooms, 4, 'le record ne baisse pas');
+  assert.equal(storyBestLine(), 'Meilleure descente : 4 salles sur 15.');
+  saveStoryRecord({ win: true, cleared: 15, time: 1000 });
+  saveStoryRecord({ win: true, cleared: 15, time: 800 });
+  saveStoryRecord({ win: true, cleared: 15, time: 950 });
+  assert.deepEqual(settings.story, { bestRooms: 15, wins: 3, bestTime: 800 });
+  assert.equal(storyBestLine(), 'Meilleure descente : 15 salles sur 15 · 3 victoires, meilleur temps 13:20.0.');
+});

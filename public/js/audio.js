@@ -70,8 +70,8 @@ export class Sfx {
     src.stop(t + dur + 0.02);
   }
 
-  // vol : 0..1 (atténuation selon la distance, par exemple)
-  play(name, vol = 1) {
+  // vol : 0..1 (atténuation selon la distance, par exemple). k : variante du son (rareté du sort pris).
+  play(name, vol = 1, k = 0) {
     if (!this.ctx || this.volume <= 0 || vol <= 0.02) return;
     // Évite l'empilement d'un même son dans la même frame.
     const now = this.ctx.currentTime;
@@ -135,6 +135,30 @@ export class Sfx {
         break;
       case 'lose':
         [392, 330, 262].forEach((f, i) => this.tone('triangle', f, f * 0.98, 0.3, 0.14 * v, i * 0.12));
+        break;
+      case 'spawn':
+        this.noise(0.25, 0.14 * v, 300, 1400, 1.2);
+        this.tone('sine', 140, 280, 0.22, 0.12 * v);
+        break;
+      case 'chest':
+        this.tone('triangle', 392, 392, 0.12, 0.14 * v);
+        this.tone('triangle', 587, 587, 0.2, 0.14 * v, 0.1);
+        break;
+      case 'pick':
+        // Deux notes pour un sort commun, une de plus par niveau de rareté.
+        [0, 4, 7, 12, 16].slice(0, 2 + k).forEach((st, i) => {
+          const f = 523 * 2 ** (st / 12);
+          this.tone('triangle', f, f, 0.2, 0.14 * v, i * 0.07);
+        });
+        break;
+      case 'door':
+        this.noise(0.35, 0.2 * v, 500, 120, 0.8, 'lowpass');
+        this.tone('sine', 90, 60, 0.3, 0.2 * v);
+        break;
+      case 'boss':
+        this.tone('sawtooth', 110, 55, 0.9, 0.12 * v);
+        this.tone('sine', 55, 41, 1.1, 0.3 * v);
+        this.noise(0.8, 0.16 * v, 700, 90, 0.7, 'lowpass');
         break;
       case 'ui':
         this.tone('sine', 1200, 900, 0.05, 0.08 * v);

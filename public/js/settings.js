@@ -29,6 +29,7 @@ const DEFAULTS = {
   vsEnv: 'normal',
   build: { ...DEFAULT_BUILD },
   best: { facile: 0, normal: 0, difficile: 0, hardcore: 0 },
+  story: { bestRooms: 0, wins: 0, bestTime: 0 },   // mode histoire : salles vidées au mieux, victoires, meilleur temps
 };
 
 function load() {
@@ -41,6 +42,7 @@ function load() {
       ...s,
       binds: { ...DEFAULTS.binds, ...(s.binds || {}) },
       best: { ...DEFAULTS.best, ...(s.best || {}) },
+      story: { ...DEFAULTS.story, ...(s.story || {}) },
       build: sanitizeBuild(s.build),
     };
   } catch {
