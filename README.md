@@ -98,7 +98,7 @@ Pour rééquilibrer le jeu :
 npm test
 ```
 
-Les tests couvrent les règles de jeu, des parties complètes entre IA, le mode histoire (butin, salles, ennemis, boss, une run complète jouée par un pilote scripté), le rendu sur un canvas simulé, le serveur (salons, file rapide, IA, coop, abandon, messages invalides) et la prédiction réseau avec une latence simulée.
+Les tests couvrent les règles de jeu, des parties complètes entre IA, le mode histoire (butin, salles, ennemis, boss, une run complète jouée par un pilote scripté), le rendu sur un canvas simulé, les sons sur un contexte audio simulé, le serveur (salons, file rapide, IA, coop, abandon, messages invalides) et la prédiction réseau avec une latence simulée.
 
 ---
 

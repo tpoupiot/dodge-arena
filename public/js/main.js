@@ -1015,6 +1015,12 @@ function playerById(view, id) {
   return view.players.find((p) => p.id === id) || (view.mobs && view.mobs.find((p) => p.id === id)) || null;
 }
 
+// Position gauche-droite d'un son par rapport à ton personnage (-1 à 1, atteint à 1 400 unités).
+function panOf(view, x) {
+  const me = view.players.find((p) => p.isYou);
+  return me ? (x - me.x) / 1400 : 0;
+}
+
 function handleEvents(evs) {
   if (!session) return;
   const view = session.view();
@@ -1043,10 +1049,10 @@ function handleEvents(evs) {
           fx.number(at.x, at.y - 20, `-${ev.dmg}`, isMe ? '#ff6b6b' : ev.by === view.you ? '#fde68a' : '#e9eef3', ev.dmg >= 25);
         }
         if (isMe) {
-          sfx.play('hurt');
+          sfx.play('hurt', 1, ev.dmg / 40);
           fx.shake(5 + ev.dmg * 0.25);
         } else {
-          sfx.play('hit', ev.by === view.you ? 1 : 0.55);
+          sfx.play('hit', ev.by === view.you ? 1 : 0.55, ev.dmg / 40, panOf(view, ev.x));
         }
         break;
       }
@@ -1056,7 +1062,7 @@ function handleEvents(evs) {
           // Ennemi du mode histoire : éclat à sa couleur, pas de message.
           fx.burst(ev.x, ev.y, mob.color, mob.boss ? 60 : 22, mob.boss ? 520 : 340, mob.boss ? 1 : 0.5, 5);
           fx.ring(ev.x, ev.y, mob.color, mob.r * 0.5, mob.r * (mob.boss ? 4 : 2.4), mob.boss ? 0.7 : 0.35, 6);
-          sfx.play('die', mob.boss ? 1 : 0.45);
+          sfx.play('die', mob.boss ? 1 : 0.45, mob.boss ? 2 : 0, panOf(view, ev.x));
           if (mob.boss) fx.shake(14);
           mobLook.delete(ev.id);
           break;
@@ -1065,7 +1071,7 @@ function handleEvents(evs) {
         const color = victim ? victim.color : '#e9eef3';
         fx.burst(ev.x, ev.y, color, 44, 460, 0.8, 6);
         fx.ring(ev.x, ev.y, color, 20, 170, 0.5, 8);
-        sfx.play('die', ev.id === view.you ? 1 : 0.7);
+        sfx.play('die', ev.id === view.you ? 1 : 0.7, 1, panOf(view, ev.x));
         if (ev.id === view.you) fx.shake(12);
         if (isStory()) {
           if (victim) fx.pushFeed([{ text: victim.name, color }, { text: ' est à terre', color: '#93a1b0' }]);
@@ -1084,7 +1090,7 @@ function handleEvents(evs) {
         fx.ring(ev.fx, ev.fy, '#fde68a', 10, 64, 0.3, 4);
         fx.burst(ev.x, ev.y, '#fde68a', 18, 260, 0.4, 4);
         fx.ring(ev.x, ev.y, '#facc15', 72, 18, 0.3, 4);
-        sfx.play('flash');
+        sfx.play('flash', 1, 0, panOf(view, ev.x));
         break;
       case 'dash':
         sfx.play('dash', 0.8);
@@ -1104,17 +1110,17 @@ function handleEvents(evs) {
         if (!w) fx.setBanner('Égalité', 'Personne ne marque cette manche', '#e9eef3', 2.8);
         else if (w.id === view.you) {
           fx.setBanner('Manche gagnée', '', '#5ee08f', 2.8);
-          sfx.play('win');
+          sfx.play('win', 1, 1);
         } else {
           fx.setBanner(`${w.name} gagne la manche`, '', w.color, 2.8);
-          sfx.play('lose');
+          sfx.play('lose', 1, 1);
         }
         break;
       }
       case 'matchEnd': {
         const youWon = ev.winner === view.you;
         fx.setBanner(youWon ? 'Victoire' : 'Défaite', '', youWon ? '#5ee08f' : '#ef4b54', 2);
-        sfx.play(youWon ? 'win' : 'lose');
+        sfx.play(youWon ? 'win' : 'lose', 1, 2);
         lastMatchEnd = ev;
         const players = view.players.map((p) => ({ id: p.id, name: p.name, color: p.color }));
         clearTimeout(resultsTimer);
@@ -1131,7 +1137,7 @@ function handleEvents(evs) {
           updateBestLine();
         }
         hud.survived = ev.survived;
-        sfx.play(record ? 'win' : 'lose');
+        sfx.play(record ? 'win' : 'lose', 1, 2);
         clearTimeout(resultsTimer);
         resultsTimer = setTimeout(() => showSurvivalResults(ev.survived, ev.dodges, record, prev), 900);
         break;
@@ -1147,7 +1153,7 @@ function handleEvents(evs) {
       case 'spawn':
         mobLook.set(ev.u.id, { name: ev.u.name, color: ev.u.color, r: ev.u.r, boss: !!ev.u.boss });
         fx.ring(ev.x, ev.y, ev.u.color, ev.u.r * 2.2, ev.u.r, 0.3, 5);
-        sfx.play('spawn', ev.u.boss ? 1 : 0.5);
+        sfx.play('spawn', ev.u.boss ? 1 : 0.5, ev.u.boss ? 1 : 0, panOf(view, ev.x));
         break;
       case 'clear':
         fx.setBanner('Salle vidée', '', '#5ee08f', 1.3);
@@ -1187,7 +1193,7 @@ function handleEvents(evs) {
       case 'storyEnd': {
         hideOverlay('loot');
         fx.setBanner(ev.win ? 'Victoire' : 'Défaite', '', ev.win ? '#5ee08f' : '#ef4b54', 2);
-        sfx.play(ev.win ? 'win' : 'lose');
+        sfx.play(ev.win ? 'win' : 'lose', 1, 2);
         saveStoryRecord(ev);
         $('#story-best').textContent = storyBestLine();
         const players = view.players.map((p) => ({ id: p.id, name: p.name, color: p.color }));
@@ -1218,7 +1224,7 @@ function timedEffects(view, f, withSound) {
       const flying = t >= s.tl && t < s.cut && t < s.end && s.hiddenAt == null;
       if (!s._launched && t >= s.tl && t < s.cut) {
         s._launched = true;
-        if (withSound) sfx.play(s.def === 'r' || s.def === 'fleche' ? 'castHeavy' : 'cast', vol(s.ox, s.oy) * (s.owner ? 1 : 0.6));
+        if (withSound) sfx.play(s.def === 'r' || s.def === 'fleche' ? 'castHeavy' : 'cast', vol(s.ox, s.oy) * (s.owner ? 1 : 0.6), 0, panOf(view, s.ox));
       }
       if (flying && (s.def === 'r' || s.def === 'fleche') && Math.random() < 0.7) {
         const p = linePos(s, t);
@@ -1234,7 +1240,7 @@ function timedEffects(view, f, withSound) {
         const c = colorOf(s.owner);
         f.burst(s.x, s.y, c, 22, 360, 0.5, 5);
         f.ring(s.x, s.y, c, s.r * 0.5, s.r * 1.15, 0.4, 6);
-        if (withSound) sfx.play('boom', vol(s.x, s.y) * 0.8);
+        if (withSound) sfx.play('boom', vol(s.x, s.y) * 0.8, (s.r - 80) / 120, panOf(view, s.x));
       }
     } else if (s.kind === 'beam') {
       if (!s._fired && t >= s.ta) {
@@ -1248,7 +1254,7 @@ function timedEffects(view, f, withSound) {
     } else if (s.kind === 'ring') {
       if (!s._closed && t >= s.ta) {
         s._closed = true;
-        if (withSound) sfx.play('cage', vol(s.x, s.y));
+        if (withSound) sfx.play('cage', vol(s.x, s.y), 0, panOf(view, s.x));
       }
     }
   }
@@ -1336,4 +1342,4 @@ if (invite) {
 requestAnimationFrame(frame);
 
 // Accès pratique pour le débogage dans la console.
-window.dodgeArena = { get session() { return session; }, online, settings, renderer, get lastMatchEnd() { return lastMatchEnd; } };
+window.dodgeArena = { get session() { return session; }, online, settings, renderer, sfx, get lastMatchEnd() { return lastMatchEnd; } };
